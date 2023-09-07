@@ -138,6 +138,9 @@ class XlaNode : public torch::lazy::Node {
 
   std::string ToString() const override;
 
+  void AddTag(const std::string& tag) { experimental_tags_.push_back(tag); }
+  const std::vector<std::string>& experimental_tags() const { return experimental_tags_; }
+
  private:
   xla::Shape GetOpShape(const std::function<xla::Shape()>& shape_fn) const;
 
@@ -153,6 +156,8 @@ class XlaNode : public torch::lazy::Node {
   torch::lazy::hash_t node_hash_ = 0;
   torch::lazy::hash_t dag_hash_;
   torch::lazy::hash_t sharding_hash_ = 0;
+
+  std::vector<std::string> experimental_tags_;
 
   // Experimental sharding annotations attached to the IR node.
   std::vector<std::shared_ptr<xla::OpSharding>> output_shardings_;

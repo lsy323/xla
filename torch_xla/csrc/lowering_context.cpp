@@ -2,6 +2,7 @@
 
 #include <torch/csrc/lazy/core/ir_metadata.h>
 
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -69,6 +70,20 @@ class HloMetadataSetter {
       }
       metadata.set_source_file(frame.function + "@" + frame.file.substr(pos));
       metadata.set_source_line(frame.line);
+    }
+    const XlaNode* xlanode = dynamic_cast<const XlaNode*>(node);
+    const std::vector<std::string>& tags = xlanode->experimental_tags();
+    if (!tags.empty()) {
+      std::stringstream ss;
+      ss << '[';
+      for (size_t idx = 0; idx < tags.size(); ++idx) {
+        ss << tags.at(idx);
+        if (idx != tags.size() - 1) {
+          ss << ',';
+        }
+      }
+      ss << ']';
+      metadata.set_op_name(ss.str());
     }
     loctx->builder()->SetOpMetadata(std::move(metadata));
   }
