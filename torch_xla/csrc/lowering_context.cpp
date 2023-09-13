@@ -86,6 +86,8 @@ class HloMetadataSetter {
       metadata.set_op_name(ss.str());
     }
     loctx->builder()->SetOpMetadata(std::move(metadata));
+    // std::cout << metadata.DebugString() << std::endl;
+    // loctx->builder()->SetOneShotOpMetadata(std::move(metadata));
   }
 
   LoweringContext* loctx_ = nullptr;

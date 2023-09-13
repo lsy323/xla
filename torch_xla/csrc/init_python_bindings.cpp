@@ -1984,6 +1984,7 @@ void InitXlaModuleBindings(py::module m) {
   m.def("_xla_add_tag",
         [](const at::Tensor& input, const std::string& tag) {
           TORCH_LAZY_COUNTER("XlaAddTag", 1);
+          std::cout << "in add tag" << std::endl;
           XLATensorPtr xtensor = bridge::GetXlaTensor(input);
           xtensor->AddTag(tag);
         });
