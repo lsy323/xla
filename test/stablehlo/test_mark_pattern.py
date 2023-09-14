@@ -193,7 +193,6 @@ args = (torch.rand(200, 200),)
 model_ep = torch._export.export(m, args)
 pattern_args = (torch.rand(200, 200),)
 pattern_kwargs = {"dim" : 1}
-# Wrap the exported graph with tagging callbacks
 model_ep = tagging_utils.mark_pattern(model_ep, log_softmax_pattern, pattern_args, pattern_kwargs)
 pattern_kwargs = {"dim" : 0}
 model_ep = tagging_utils.mark_pattern(model_ep, log_softmax_pattern_dim0, pattern_args, pattern_kwargs)
@@ -201,8 +200,8 @@ model_ep = tagging_utils.mark_pattern(model_ep, log_softmax_pattern_dim0, patter
 args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
 res = model_ep(*args)
 
-# stablehlo = xm.get_stablehlo([res])
-# print(stablehlo)
+stablehlo = xm.get_stablehlo([res])
+print(stablehlo)
 
 stablehlo_bytecode = xm.get_stablehlo_bytecode([res])
 print(stablehlo_bytecode)
