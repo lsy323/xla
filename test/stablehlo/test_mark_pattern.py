@@ -185,7 +185,7 @@ class M(torch.nn.Module):
         r = x
         for i in range(5):
             dim = i % 2
-            r = torch.nn.LogSoftmax(dim=dim)(r) * r
+            r = torch.nn.LogSoftmax(dim=dim)(r) * x
         return r
 
 m = M().eval()
@@ -201,8 +201,8 @@ model_ep = tagging_utils.mark_pattern(model_ep, log_softmax_pattern_dim0, patter
 args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
 res = model_ep(*args)
 
-stablehlo = xm.get_stablehlo([res])
-print(stablehlo)
+# stablehlo = xm.get_stablehlo([res])
+# print(stablehlo)
 
 stablehlo_bytecode = xm.get_stablehlo_bytecode([res])
 print(stablehlo_bytecode)
