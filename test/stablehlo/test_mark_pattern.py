@@ -170,8 +170,8 @@ from torch_xla.experimental import tagging_utils
 
 #############
 # Pattern to match in the exported graph.
-def log_softmax_pattern(x):
-    return torch.nn.LogSoftmax()(x)
+def log_softmax_pattern(x, dim=1):
+    return torch.nn.LogSoftmax(dim=dim)(x)
 
 class M(torch.nn.Module):
     def __init__(self):
@@ -179,20 +179,20 @@ class M(torch.nn.Module):
 
     def forward(self, x):
         r = x
-        for _ in range(5):
-            r = torch.nn.LogSoftmax()(r) * x
+        for idx in range(5):
+            r = torch.nn.LogSoftmax(dim=idx%2)(r) * x
         return r
 
 m = M().eval()
 args = (torch.rand(200, 200),)
 model_ep = torch.export.export(m, args)
 pattern_args = (torch.rand(200, 200),)
-model_ep = tagging_utils.mark_pattern(model_ep, log_softmax_pattern, pattern_args)
+model_ep = tagging_utils.mark_pattern("softmax_pattern", model_ep, log_softmax_pattern, pattern_args)
 args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
 res = model_ep(*args)
 
-# stablehlo = xm.get_stablehlo([res])
-# print(stablehlo)
+stablehlo = xm.get_stablehlo([res])
+print(stablehlo)
 
 # stablehlo_bytecode = xm.get_stablehlo_bytecode([res])
 # print(stablehlo_bytecode)
