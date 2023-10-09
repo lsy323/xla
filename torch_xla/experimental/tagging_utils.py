@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 from dataclasses import dataclass
 import json
@@ -8,15 +9,16 @@ import torch_xla
 from torch_xla.core import xla_model as xm
 from typing import List, Tuple, Dict, Any, Callable, Union, Optional
 
-__all__ = ['mark_pattern']
+__all__ = ["mark_pattern"]
+
 
 @dataclass
 class PortTag:
     name: str  # Identify Patttern
     pos: int  # Arg/return position
     id: int  # Patten instance id
-    is_input: bool = True # If the tagged tensor is input/output
-    attr: Dict = None # Attribute of the pattern, only output has attr field
+    is_input: bool = True  # If the tagged tensor is input/output
+    attr: Dict = None  # Attribute of the pattern, only output has attr field
 
 
 class TagSerializer(json.JSONEncoder):
@@ -43,8 +45,10 @@ def tag_input(x, i, tag_name, total_input):
 
 tag_input.counter = dict()
 
+
 def select_output(outputs, pos):
     return outputs[pos]
+
 
 def tag_output(x, pos, tag_name, total_output, kwargs):
     if tag_name not in tag_output.counter:
@@ -52,10 +56,16 @@ def tag_output(x, pos, tag_name, total_output, kwargs):
     tag_count = tag_output.counter[tag_name]
     match_id = int(tag_count / total_output)
     print(
-        "tag_output name: {}, output pos {}, match_id: {}, attr: {}".format(tag_name, pos, match_id, kwargs)
+        "tag_output name: {}, output pos {}, match_id: {}, attr: {}".format(
+            tag_name, pos, match_id, kwargs
+        )
     )
     torch_xla._XLAC._xla_add_tag(
-        x, json.dumps(PortTag(tag_name, pos, match_id, is_input=False, attr=kwargs), cls=TagSerializer)
+        x,
+        json.dumps(
+            PortTag(tag_name, pos, match_id, is_input=False, attr=kwargs),
+            cls=TagSerializer,
+        ),
     )
     tag_output.counter[tag_name] += 1
     return x
@@ -86,7 +96,8 @@ def get_pattern_node(pattern_name, pattern, args, kwargs):
         tagged_placeholders.append(
             new_g.call_function(
                 # tag_input, (placeholders[i], i, pattern_name, n_inputs)
-                tag_input, (placeholders[i], i, pattern_name, n_fx_input)
+                tag_input,
+                (placeholders[i], i, pattern_name, n_fx_input)
                 # tag_input, (placeholders[i], i, "pattern", n_inputs)
             )
         )
@@ -99,9 +110,9 @@ def get_pattern_node(pattern_name, pattern, args, kwargs):
     output_nodes = []
     if n_outputs > 1:
         for pos in range(n_outputs):
-            output_nodes.append(new_g.call_function(select_output,(node_tagged, pos)))
+            output_nodes.append(new_g.call_function(select_output, (node_tagged, pos)))
     else:
-        output_nodes = [node_tagged]     
+        output_nodes = [node_tagged]
 
     tagged_output_nodes = []
     for pos, output in enumerate(output_nodes):
@@ -115,10 +126,41 @@ def get_pattern_node(pattern_name, pattern, args, kwargs):
     return replace_gm
 
 
+@dataclass
+class NodeConstantLoc:
+    arg_name: str
+    node_name: str
+    pos: int = None
+    key: str = None
+
+
+def extract_constant_from_matched_pattern(
+    matches: List[subgraph_rewriter.ReplacedPatterns], loc: NodeConstantLoc
+):
+    val = None
+    for match in matches:
+        for k, v in match.nodes_map.items():
+            if k.name == loc.node_name:
+                # print(str(v.args[loc.pos]))
+                if loc.pos is not None:
+                    val = str(v.args[loc.pos])
+                # TODO Handel kwarg
+        assert val is not None
+        for n in match.replacements:
+            if n.op == "call_function" and n.target == tag_output:
+                attr_arg_idx = 4  # TODO: move to kwarg of the 'tag_ouptut'
+                attr_dict = dict(n.args[attr_arg_idx])
+                attr_dict[loc.arg_name] = val
+                n.update_arg(4, attr_dict)
+
+
 def mark_pattern(
     pattern_name: str,
-    exported_ep: GraphModule, pattern: Union[Callable, GraphModule, torch.nn.Module], pattern_args: Tuple,
-    pattern_kwargs: Optional[Dict[str, Any]] = None
+    exported_ep: GraphModule,
+    pattern: Union[Callable, GraphModule, torch.nn.Module],
+    pattern_args: Tuple,
+    pattern_kwargs: Optional[Dict[str, Any]] = None,
+    constant_fx_node_name: Optional[NodeConstantLoc] = None,
 ):
     print("check whole graph")
     exported_ep.graph_module.graph.print_tabular()
@@ -130,16 +172,21 @@ def mark_pattern(
         # FIXME: torch.export will generate a dangling input if there is constant
         pattern_ep = torch.export.export(pattern, pattern_args)
     # Build pattern replacement
-    replace_pattern_gm = get_pattern_node(pattern_name, pattern, pattern_args, pattern_kwargs)
+    replace_pattern_gm = get_pattern_node(
+        pattern_name, pattern, pattern_args, pattern_kwargs
+    )
     print("check replacement gm")
     replace_pattern_gm.graph.print_tabular()
     print("check pattern gm")
     pattern_ep.graph_module.graph.print_tabular()
     matches = subgraph_rewriter.replace_pattern_with_filters(
-        exported_ep.graph_module, pattern_ep.graph_module, replace_pattern_gm,
-        ignore_literals=True
+        exported_ep.graph_module,
+        pattern_ep.graph_module,
+        replace_pattern_gm,
+        ignore_literals=True,
     )
     print("check matches")
     print(matches)
+    extract_constant_from_matched_pattern(matches, constant_fx_node_name)
     exported_ep.graph_module.graph.print_tabular()
     return exported_ep
