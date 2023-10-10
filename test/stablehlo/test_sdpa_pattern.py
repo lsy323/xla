@@ -33,13 +33,22 @@ m = M().eval()
 args = (attn_in, attn_in2)
 model_ep = torch.export.export(m, args)
 pattern_args = (q, k, v)
+# model_ep = tagging_utils.mark_pattern(
+#     "sdpa_pattern",
+#     model_ep,
+#     sdpa_pattern,
+#     pattern_args,
+#     pattern_kwargs={"scale": 9},
+#     constant_fx_node_name=tagging_utils.NodeConstantLoc("scale", "mul_1", pos=1),
+# )
 model_ep = tagging_utils.mark_pattern(
     "sdpa_pattern",
     model_ep,
     sdpa_pattern,
-    pattern_args,
-    constant_fx_node_name=tagging_utils.NodeConstantLoc("scale", "mul_1", pos=1),
+    [(q,k,v), (q,k,v)],
+    pattern_kwargs=[{"scale": 9.0}, {"scale":0.25}],
 )
+
 args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
 res = model_ep(*args)
 
