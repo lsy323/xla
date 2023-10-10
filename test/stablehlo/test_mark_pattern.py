@@ -198,7 +198,7 @@ model_ep = tagging_utils.mark_pattern(
 args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
 res = model_ep(*args)
 
-stablehlo = xm.get_stablehlo([res[0]])
+stablehlo = xm.get_stablehlo([res])
 print(stablehlo)
 
 # stablehlo_bytecode = xm.get_stablehlo_bytecode([res])
