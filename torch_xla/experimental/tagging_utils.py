@@ -154,31 +154,87 @@ def extract_constant_from_matched_pattern(
                 n.update_arg(4, attr_dict)
 
 
+def find_constant_arg_mapping(pattern, argsList: List[Tuple], kwargsList:List[Dict]):
+    # Assume const in kwargs
+    print("in find_constant_arg_mapping")
+    assert len(argsList) == 2 and len(kwargsList) == 2 
+    # pos = -1
+    # for idx in range(len(argsList[0])):
+    #     arg0 = argsList[0][idx]
+    #     arg1 = argsList[1][idx]
+    #     assert type(arg0) == type(arg1)
+    #     print(type(arg0))
+    #     if not isinstance(arg0, torch.Tensor):
+    #         # Only caputure the first constant arg
+    #         pos = idx
+    #         break
+    # if pos == -1:
+    #     print("Constant not found")
+    #     return None
+
+    ep1 = torch.export.export(pattern, argsList[0], kwargs=kwargsList[0])
+    ep2 = torch.export.export(pattern, argsList[1], kwargs=kwargsList[1])
+
+    node_list1 = list(ep1.graph_module.graph.nodes)
+    node_list2 = list(ep2.graph_module.graph.nodes)
+    assert len(node_list1) == len(node_list2)
+    # TODO: Extensive check on topological order and op type
+    constant_key = list(kwargsList[0].keys())[0]
+    constant_type = type(kwargsList[0][constant_key])
+    print(constant_type)
+    for idx in range(len(node_list1)):
+        n1_args = node_list1[idx].args
+        n2_args = node_list2[idx].args
+        if len(n1_args) > 0:
+            for arg_idx in range(len(n1_args)):
+                n1_val = n1_args[arg_idx]
+                n2_val = n2_args[arg_idx]
+                print(type(n1_val))
+                if type(n1_val) == constant_type and n1_val != n2_val:
+                    return NodeConstantLoc(constant_key, node_list1[idx].name, pos=arg_idx)
+    return None
+
+def eliminate_dangling_arg(graph: Graph):
+    nodes_to_erase = []
+    for n in graph.nodes:
+        if n.op == "placeholder" and len(n.users) == 0:
+            nodes_to_erase.append(n)
+    for n in nodes_to_erase:
+        graph.erase_node(n)
+
 def mark_pattern(
     pattern_name: str,
     exported_ep: GraphModule,
     pattern: Union[Callable, GraphModule, torch.nn.Module],
-    pattern_args: Tuple,
-    pattern_kwargs: Optional[Dict[str, Any]] = None,
+    pattern_args: Union[Tuple, List[Tuple]],
+    pattern_kwargs: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
     constant_fx_node_name: Optional[NodeConstantLoc] = None,
 ):
     print("check whole graph")
     exported_ep.graph_module.graph.print_tabular()
-    pattern_kwargs = pattern_kwargs or {}
+    pattern_args_for_export = pattern_args
+    if not isinstance(pattern_args, Tuple):
+        pattern_args_for_export = pattern_args[0]
+    pattern_kwargs_for_export = pattern_kwargs or {}
+    if not isinstance(pattern_kwargs, Dict) and pattern_kwargs is not None:
+        pattern_kwargs_for_export = pattern_kwargs[0]
+
     if isinstance(pattern, GraphModule):
         pattern_ep = pattern
     else:
         # pattern_ep = torch.export.export(pattern, pattern_args, pattern_kwargs)
         # FIXME: torch.export will generate a dangling input if there is constant
-        pattern_ep = torch.export.export(pattern, pattern_args)
+        pattern_ep = torch.export.export(pattern, pattern_args_for_export, pattern_kwargs_for_export)
     # Build pattern replacement
     replace_pattern_gm = get_pattern_node(
-        pattern_name, pattern, pattern_args, pattern_kwargs
+        pattern_name, pattern, pattern_args_for_export, pattern_kwargs_for_export
     )
     print("check replacement gm")
     replace_pattern_gm.graph.print_tabular()
     print("check pattern gm")
     pattern_ep.graph_module.graph.print_tabular()
+    # Eliminate placeholder for const, which is dangling, and trgerring assertion in matching
+    eliminate_dangling_arg(pattern_ep.graph_module.graph)
     matches = subgraph_rewriter.replace_pattern_with_filters(
         exported_ep.graph_module,
         pattern_ep.graph_module,
@@ -187,6 +243,13 @@ def mark_pattern(
     )
     print("check matches")
     print(matches)
-    extract_constant_from_matched_pattern(matches, constant_fx_node_name)
+    capture_const = (not isinstance(pattern_args, Tuple)) or (constant_fx_node_name is not None)
+    if capture_const:
+        constant_node_mapping = constant_fx_node_name
+        if not isinstance(pattern_args, Tuple):
+            constant_node_mapping = find_constant_arg_mapping(pattern, pattern_args, pattern_kwargs)
+        assert constant_node_mapping is not None
+        print(constant_node_mapping)
+        extract_constant_from_matched_pattern(matches, constant_node_mapping)
     exported_ep.graph_module.graph.print_tabular()
     return exported_ep
