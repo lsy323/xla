@@ -151,7 +151,6 @@ class ConstAttrTracker:
     for source in sources:
       target = self.transform(source)
       if not self._is_equal(self.inverse_transform(target), source):
-        print(target, source, self.inverse_transform(target))
         raise Exception(
             f"Invalid transform/inverse_transform for {self.attr_name}")
       self.source_targets.append([source, target])
