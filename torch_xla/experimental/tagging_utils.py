@@ -127,11 +127,43 @@ def get_pattern_node(pattern_name, pattern, args, pattern_attrs=None):
     replace_gm = GraphModule(dict(), new_g)
     return replace_gm
 
+@dataclass
+class ConstAttrTracker:
+    attr_name: str
+    pattern_arg_pos: int
+    transform: Callable[Any, Any] = lambda x: x
+    inverse_transform: Callable[Any, Any] = lambda x: x
+    source_targets: List[Tuple[Any, Any]] = dataclasses.field(default_factory=list)
+    
+    def _is_equal(self, x: Any, y: Any):
+        if type(x) != type(y):
+            return False
+        if type(x) in [int, str]:
+            return x == y
+        if isinstance(x, float):
+            rel_tol = 1e-07
+            abs_tol = 0.0
+            return abs(x-y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        if isinstance(x, list):
+            if len(x) != len(y):
+                return False
+            return all([self._is_equal(a, b) for a, b in zip(x, y)])
+        
+        raise Exception(f"Cannot compare type: {type(x)}")
+        
+    
+    def track(self, *sources):
+        for source in sources:
+            target = self.transform(source)
+            if not self._is_equal(self.inverse_transform(target), source):
+                print(target, source,  self.inverse_transform(target))
+                raise Exception(f"Invalid transform/inverse_transform for {self.attr_name}")
+            self.source_targets.append([source, target])
+        return self
 
 @dataclass
 class ConstAttrLoc:
-    attr_name: str
-    pattern_arg_pos: int
+    tracker: ConstAttrTracker
     node_name: str
     pos: int
 
@@ -150,27 +182,16 @@ def extract_and_replace_const_from_matched_pattern(
                     val = v.args[loc.pos]
                 # TODO Handel kwarg
         assert val is not None
+        pattern_arg_val = loc.tracker.inverse_transform(val)
         for n in match.replacements:
             if n.op == "call_function" and n.target == pattern:
-                n.update_arg(loc.pattern_arg_pos, val)
+                n.update_arg(loc.tracker.pattern_arg_pos, pattern_arg_val)
             if n.op == "call_function" and n.target == tag_output:
                 attr_arg_idx = 4  # TODO: move to kwarg of the 'tag_ouptut'
                 attr_dict = dict(n.args[attr_arg_idx])
-                attr_dict[loc.attr_name] = val
+                attr_dict[loc.tracker.attr_name] = pattern_arg_val
                 n.update_arg(4, attr_dict)
 
-@dataclass
-class ConstAttrTracker:
-    attr_name: str
-    pattern_arg_pos: int
-    source_targets: List[Tuple[Any, Any]] = dataclasses.field(default_factory=list)
-    
-    def track(self, source, target=None):
-        if target is None:
-            target = source
-        self.source_targets.append([source, target])
-        return self
-    
 def find_const_attr_loc(pattern, pattern_args, tracker: ConstAttrTracker):
     const_loc_intersections = None
     for source, target in tracker.source_targets:
@@ -197,7 +218,7 @@ def find_const_attr_loc(pattern, pattern_args, tracker: ConstAttrTracker):
         return None
     # Choose any occurrence as the attr provider
     node_name, arg_pos = const_loc_intersections.pop()
-    return ConstAttrLoc(tracker.attr_name, tracker.pattern_arg_pos, node_name, arg_pos)
+    return ConstAttrLoc(tracker, node_name, arg_pos)
 
 
 def eliminate_dangling_arg(graph: Graph):
