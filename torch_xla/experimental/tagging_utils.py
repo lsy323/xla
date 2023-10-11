@@ -123,7 +123,7 @@ def get_pattern_node(pattern_name, pattern, args, pattern_attrs=None):
 
 
 @dataclass
-class ConstAttrTracker:
+class ScalarAttrTracker:
   attr_name: str
   pattern_arg_pos: int
   transform: Callable[Any, Any] = lambda x: x
@@ -158,15 +158,15 @@ class ConstAttrTracker:
 
 
 @dataclass
-class ConstAttrLoc:
-  tracker: ConstAttrTracker
+class ScalarAttrLoc:
+  tracker: ScalarAttrTracker
   node_name: str
   pos: int
 
 
-def extract_and_replace_const_from_matched_pattern(
+def extract_and_replace_scalar_from_matched_pattern(
     pattern, matches: List[subgraph_rewriter.ReplacedPatterns],
-    loc: ConstAttrLoc):
+    loc: ScalarAttrLoc):
   val = None
   for match in matches:
     for k, v in match.nodes_map.items():
@@ -187,33 +187,33 @@ def extract_and_replace_const_from_matched_pattern(
         n.update_arg(4, attr_dict)
 
 
-def find_const_attr_loc(pattern, pattern_args, tracker: ConstAttrTracker):
-  const_loc_intersections = None
+def find_scalar_attr_loc(pattern, pattern_args, tracker: ScalarAttrTracker):
+  scalar_loc_intersections = None
   for source, target in tracker.source_targets:
     track_args = list(pattern_args)
     track_args[tracker.pattern_arg_pos] = source
     ep = torch.export.export(pattern, tuple(track_args))
 
-    const_locs = set()
+    scalar_locs = set()
     nodes = ep.graph_module.graph.nodes
     for n in nodes:
       for arg_pos, arg in enumerate(n.args):
         if type(arg) == type(target) and arg == target:
-          const_locs.add((n.name, arg_pos))
+          scalar_locs.add((n.name, arg_pos))
 
-    if const_loc_intersections is None:
-      const_loc_intersections = const_locs
+    if scalar_loc_intersections is None:
+      scalar_loc_intersections = scalar_locs
     else:
-      const_loc_intersections = const_loc_intersections & const_locs
+      scalar_loc_intersections = scalar_loc_intersections & scalar_locs
 
-    if not const_loc_intersections:
+    if not scalar_loc_intersections:
       break
 
-  if not const_loc_intersections:
+  if not scalar_loc_intersections:
     return None
   # Choose any occurrence as the attr provider
-  node_name, arg_pos = const_loc_intersections.pop()
-  return ConstAttrLoc(tracker, node_name, arg_pos)
+  node_name, arg_pos = scalar_loc_intersections.pop()
+  return ScalarAttrLoc(tracker, node_name, arg_pos)
 
 
 def eliminate_dangling_arg(graph: Graph):
@@ -232,8 +232,8 @@ def mark_pattern(
     # Limit the pattern to not have kwargs
     pattern_args: Tuple,
     pattern_attrs: Optional[Dict[str, Any]] = None,
-    const_attr_trackers: Optional[List[Union[ConstAttrLoc,
-                                             ConstAttrTracker]]] = None,
+    scalar_attr_trackers: Optional[List[Union[ScalarAttrLoc,
+                                              ScalarAttrTracker]]] = None,
 ):
   print("check whole graph")
   exported_ep.graph_module.graph.print_tabular()
@@ -264,16 +264,16 @@ def mark_pattern(
   print("check matches")
   print(matches)
 
-  if const_attr_trackers:
-    for tracker in const_attr_trackers:
-      if isinstance(tracker, ConstAttrLoc):
+  if scalar_attr_trackers:
+    for tracker in scalar_attr_trackers:
+      if isinstance(tracker, ScalarAttrLoc):
         loc = tracker
       else:
-        loc = find_const_attr_loc(pattern, pattern_args, tracker)
+        loc = find_scalar_attr_loc(pattern, pattern_args, tracker)
 
       assert loc is not None
       print(loc)
-      extract_and_replace_const_from_matched_pattern(pattern, matches, loc)
+      extract_and_replace_scalar_from_matched_pattern(pattern, matches, loc)
 
   exported_ep.graph_module.graph.print_tabular()
   return exported_ep

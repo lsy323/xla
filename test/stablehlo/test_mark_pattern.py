@@ -192,8 +192,8 @@ model_ep = tagging_utils.mark_pattern(
     exported_ep=model_ep,
     pattern=log_softmax_pattern,
     pattern_args=(torch.rand(10, 10, 10), 1),
-    const_attr_trackers=[
-        tagging_utils.ConstAttrTracker("dim", pattern_arg_pos=1).track(0).track(1).track(2),
+    scalar_attr_trackers=[
+        tagging_utils.ScalarAttrTracker("dim", pattern_arg_pos=1).track(0).track(1).track(2),
     ])
 args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
 res = model_ep(*args)
