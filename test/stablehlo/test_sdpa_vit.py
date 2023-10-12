@@ -41,8 +41,8 @@ exported_model = tagging_utils.mark_pattern(
     exported_model,
     fused_sdpa_pattern,
     (q, k, v, 0, 0.32),
-    const_attr_trackers=[
-        tagging_utils.ConstAttrTracker(
+    scalar_attr_trackers=[
+        tagging_utils.ScalarAttrTracker(
             "scale",
             transform=math.sqrt,
             inverse_transform=lambda x: x**2,
@@ -55,8 +55,8 @@ exported_model = tagging_utils.mark_pattern(
     exported_model,
     non_fused_sdpa_pattern,
     (q, k, v, 0, 0.32),
-    const_attr_trackers=[
-        tagging_utils.ConstAttrTracker(
+    scalar_attr_trackers=[
+        tagging_utils.ScalarAttrTracker(
             "scale",
             pattern_arg_pos=4,
         ).track(0.1, 0.2)
