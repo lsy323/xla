@@ -215,8 +215,14 @@ def find_scalar_attr_loc(pattern, pattern_args, tracker: ScalarAttrTracker):
   node_name, arg_pos = scalar_loc_intersections.pop()
   return ScalarAttrLoc(tracker, node_name, arg_pos)
 
+def eliminate_clone_ops(graph: Graph):
+  for n in graph.nodes:
+    if n.op == "call_function" and n.name.startswith("clone"):
+      n.replace_all_uses_with(n.args[0])
+      graph.erase_node(n)
 
-def eliminate_dangling_arg(graph: Graph):
+
+def eliminate_dangling_args(graph: Graph):
   nodes_to_erase = []
   for n in graph.nodes:
     if n.op == "placeholder" and len(n.users) == 0:
@@ -235,13 +241,18 @@ def mark_pattern(
     scalar_attr_trackers: Optional[List[Union[ScalarAttrLoc,
                                               ScalarAttrTracker]]] = None,
 ):
+  exported_ep = copy.deepcopy(exported_ep)
   print("check whole graph")
+  # torch export adds additional aten.clone nodes to produce contiguous in memory tensors 
+  # depending on tensor sizes for runtime efficiency. However, these unpredictable clone 
+  # nodes can break the pattern matching. Thus remove all clones in model and pattern graphs. 
+  eliminate_clone_ops(exported_ep.graph_module.graph)
   exported_ep.graph_module.graph.print_tabular()
 
   pattern_args = tuple(pattern_args)
 
   if isinstance(pattern, GraphModule):
-    pattern_ep = pattern
+    pattern_ep = copy.deepcopy(pattern)
   else:
     # pattern_ep = torch.export.export(pattern, pattern_args, pattern_kwargs)
     # FIXME: torch.export will generate a dangling input if there is constant
@@ -252,9 +263,11 @@ def mark_pattern(
   print("check replacement gm")
   replace_pattern_gm.graph.print_tabular()
   print("check pattern gm")
+  eliminate_clone_ops(pattern_ep.graph_module.graph)
   pattern_ep.graph_module.graph.print_tabular()
   # Eliminate placeholder for const, which is dangling, and trgerring assertion in matching
-  eliminate_dangling_arg(pattern_ep.graph_module.graph)
+  eliminate_dangling_args(pattern_ep.graph_module.graph)
+  
   matches = subgraph_rewriter.replace_pattern_with_filters(
       exported_ep.graph_module,
       pattern_ep.graph_module,
