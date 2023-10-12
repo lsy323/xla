@@ -6,6 +6,7 @@ import torch
 from torch.fx import subgraph_rewriter
 from torch.fx import Graph, GraphModule
 import torch_xla
+from torch.utils import _pytree as pytree
 from torch_xla.core import xla_model as xm
 from typing import List, Tuple, Dict, Any, Callable, Union, Optional
 
@@ -212,10 +213,17 @@ def find_const_attr_loc(pattern, pattern_args, tracker: ConstAttrTracker):
             break
 
     if not const_loc_intersections:
-        return None
+      return None
     # Choose any occurrence as the attr provider
     node_name, arg_pos = const_loc_intersections.pop()
     return ConstAttrLoc(tracker, node_name, arg_pos)
+
+
+def eliminate_clone_ops(graph: Graph):
+  for n in graph.nodes:
+    if n.op == "call_function" and n.name.startswith("clone"):
+      n.replace_all_uses_with(n.args[0])
+      graph.erase_node(n)
 
 
 def eliminate_dangling_arg(graph: Graph):
@@ -236,36 +244,99 @@ def mark_pattern(
     pattern_attrs: Optional[Dict[str, Any]] = None,
     const_attr_trackers: Optional[List[Union[ConstAttrLoc, ConstAttrTracker]]] = None,
 ):
-    pattern_args = tuple(pattern_args)
+  exported_ep = copy.deepcopy(exported_ep)
+  print("check whole graph")
+  # torch export adds additional aten.clone nodes to produce contiguous in memory tensors
+  # depending on tensor sizes for runtime efficiency. However, these unpredictable clone
+  # nodes can break the pattern matching. Thus remove all clones in model and pattern graphs.
+  eliminate_clone_ops(exported_ep.graph_module.graph)
+  exported_ep.graph_module.graph.print_tabular()
 
-    if isinstance(pattern, GraphModule):
-        pattern_ep = pattern
-    else:
-        pattern_ep = torch.export.export(pattern, pattern_args)
-    # Build pattern replacement
-    replace_pattern_gm = get_pattern_node(
-        pattern_name, pattern, pattern_ep, pattern_args, pattern_kwargs, pattern_attrs
-    )
-    # print("check replacement gm")
-    # replace_pattern_gm.graph.print_tabular()
-    # print("check pattern gm")
-    # pattern_ep.graph_module.graph.print_tabular()
-    # Eliminate placeholder for const, which is dangling, and trgerring assertion in matching
-    eliminate_dangling_arg(pattern_ep.graph_module.graph)
-    matches = subgraph_rewriter.replace_pattern_with_filters(
-        exported_ep.graph_module,
-        pattern_ep.graph_module,
-        replace_pattern_gm,
-        ignore_literals=True,
-    )
-    # print("check matches")
-    # print(matches)
-    if const_attr_trackers:
-        for tracker in const_attr_trackers:
-            if isinstance(tracker, ConstAttrLoc):
-                loc = tracker
-            else:
-                loc = find_const_attr_loc(pattern, pattern_args, tracker)
-            if loc is not None:
-                extract_and_replace_const_from_matched_pattern(pattern, matches, loc)
-    return exported_ep
+  pattern_args = tuple(pattern_args)
+
+  if isinstance(pattern, GraphModule):
+    pattern_ep = copy.deepcopy(pattern)
+  else:
+    # pattern_ep = torch.export.export(pattern, pattern_args, pattern_kwargs)
+    # FIXME: torch.export will generate a dangling input if there is constant
+    pattern_ep = torch.export.export(pattern, pattern_args)
+  # Build pattern replacement
+  replace_pattern_gm = get_pattern_node(pattern_name, pattern, pattern_args,
+                                        pattern_attrs)
+  print("check replacement gm")
+  replace_pattern_gm.graph.print_tabular()
+  print("check pattern gm")
+  eliminate_clone_ops(pattern_ep.graph_module.graph)
+  pattern_ep.graph_module.graph.print_tabular()
+  # Eliminate placeholder for const, which is dangling, and trgerring assertion in matching
+  eliminate_dangling_arg(pattern_ep.graph_module.graph)
+
+  matches = subgraph_rewriter.replace_pattern_with_filters(
+      exported_ep.graph_module,
+      pattern_ep.graph_module,
+      replace_pattern_gm,
+      ignore_literals=True,
+  )
+  print("check matches")
+  print(matches)
+
+  if const_attr_trackers:
+    for tracker in const_attr_trackers:
+      if isinstance(tracker, ConstAttrLoc):
+        loc = tracker
+      else:
+        loc = find_const_attr_loc(pattern, pattern_args, tracker)
+
+      assert loc is not None
+      print(loc)
+      extract_and_replace_const_from_matched_pattern(pattern, matches, loc)
+
+  exported_ep.graph_module.graph.print_tabular()
+  return exported_ep
+
+
+def xla_add_tag(n, tag):
+  for tensor in pytree.tree_flatten(n)[0]:
+    if not isinstance(tensor, torch.Tensor):
+      continue
+    torch_xla._XLAC._xla_add_tag(tensor, tag)
+  return n
+
+
+def mark_model_explorer_loc(exported_ep: GraphModule):
+
+  def class_fullname(klass):
+    module = klass.__module__
+    if module == "builtins":
+      return klass.__qualname__
+    return module + "." + klass.__qualname__
+
+  graph = exported_ep.graph_module.graph
+
+  for n in list(graph.nodes):
+    if n.op != "call_function":
+      continue
+
+    if "nn_module_stack" not in n.meta:
+      return n
+
+    nn_module_stack = n.meta["nn_module_stack"]
+
+    layers = []
+    for var, (path, cls) in nn_module_stack.items():
+      iid = path.split(".")[-1]
+      layer = class_fullname(cls)
+      if iid != "":
+        layer = f"{layer}__{iid}"
+      layers.append(layer)
+    layers.append("aten__" + n.name)
+
+    layers_loc = "/".join(layers)
+
+    users = list(n.users)
+    with graph.inserting_after(n):
+      xla_add_tag_node = graph.call_function(
+          xla_add_tag, args=(n, json.dumps({"layers_loc": layers_loc})))
+      for user in users:
+        user.replace_input_with(n, xla_add_tag_node)
+  return exported_ep

@@ -139,7 +139,10 @@ def save_torch_module_as_tf_saved_model(
     function_alias: str - passed through saved_model.save, used to tag a function for 
        inference converter or other tools.
   """
-  exported = torch.export.export(torch_model, args)
+  if isinstance(torch_model, torch.export.ExportedProgram):
+    exported = copy.deepcopy(torch_model)
+  else:
+    exported = torch.export.export(torch_model, args)
   options = stablehlo.StableHLOExportOptions(override_tracing_arguments=args)
   stablehlo_model = stablehlo.exported_program_to_stablehlo(exported, options)
   save_stablehlo_graph_as_tf(stablehlo_model, saved_model_dir, serving_key,
