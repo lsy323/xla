@@ -294,14 +294,13 @@ def mark_pattern(
   exported_ep.graph_module.graph.print_tabular()
   return exported_ep
 
-
-def xla_add_tag(n, tag):
-  for tensor in pytree.tree_flatten(n)[0]:
-    if not isinstance(tensor, torch.Tensor):
-      continue
+def xla_add_tag(tensor: torch.Tensor, tag: str) -> torch.Tensor:
+  if isinstance(tensor, torch.Tensor) and tensor.get_device() == xm.xla_device().index: 
     torch_xla._XLAC._xla_add_tag(tensor, tag)
-  return n
+  return tensor
 
+def fx_node_add_tag(n, tag):
+  return pytree.tree_map_only(torch.Tensor, lambda t: xla_add_tag(t, tag), n)
 
 def mark_model_explorer_loc(exported_ep: GraphModule):
 
@@ -335,8 +334,8 @@ def mark_model_explorer_loc(exported_ep: GraphModule):
 
     users = list(n.users)
     with graph.inserting_after(n):
-      xla_add_tag_node = graph.call_function(
-          xla_add_tag, args=(n, json.dumps({"layers_loc": layers_loc})))
+      add_tag_node = graph.call_function(
+          fx_node_add_tag, args=(n, json.dumps({"layers_loc": layers_loc})))
       for user in users:
-        user.replace_input_with(n, xla_add_tag_node)
+        user.replace_input_with(n, add_tag_node)
   return exported_ep
