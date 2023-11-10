@@ -245,6 +245,8 @@ def _exported_program_to_stablehlo_bundle(exported_model,
   if options is None:
     options = StableHLOExportOptions()
   exported_model = exported_model.run_decompositions()
+  print("check after decomp")
+  exported_model.graph_module.graph.print_tabular()
   input_args = _extract_input_args(exported_model, options)
 
   device = xm.xla_device()

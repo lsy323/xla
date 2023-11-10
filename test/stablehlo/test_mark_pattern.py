@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 import torch_xla.experimental
 from torch_xla.experimental import tagging_utils
+from torch_xla.stablehlo import exported_program_to_stablehlo
 
 # def dual_output(x, y):
 #     return (x + y, x - y)
@@ -195,11 +196,16 @@ model_ep = tagging_utils.mark_pattern(
     const_attr_trackers=[
         tagging_utils.ConstAttrTracker("dim", pattern_arg_pos=1).track(0).track(1).track(2),
     ])
-args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
-res = model_ep(*args)
+shlo_bundle = exported_program_to_stablehlo(model_ep)
+print(shlo_bundle.get_stablehlo_text())
+# model_ep.run_decompositions()
+# print("check here")
+# model_ep.graph_module.graph.print_tabular()
+# args = tuple(i.to(xm.xla_device()) for i in args if hasattr(i, "to"))
+# res = model_ep(*args)
 
-stablehlo = xm.get_stablehlo([res])
-print(stablehlo)
+# stablehlo = xm.get_stablehlo([res])
+# print(stablehlo)
 
 # stablehlo_bytecode = xm.get_stablehlo_bytecode([res])
 # print(stablehlo_bytecode)

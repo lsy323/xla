@@ -5,6 +5,7 @@ import json
 import torch
 from torch.fx import subgraph_rewriter
 from torch.fx import Graph, GraphModule
+from torch.library import Library, impl
 import torch_xla
 from torch.utils import _pytree as pytree
 from torch_xla.core import xla_model as xm
@@ -12,6 +13,7 @@ from typing import List, Tuple, Dict, Any, Callable, Union, Optional
 
 __all__ = ["mark_pattern"]
 
+xla_pattern_marking_lib = Library("xla_pattern_marking", "DEF")
 
 @dataclass
 class PortTag:
@@ -19,7 +21,7 @@ class PortTag:
     pos: int  # Arg/return position
     id: int  # Patten instance id
     is_input: bool = True  # If the tagged tensor is input/output
-    attr: Dict = None  # Attribute of the pattern, only output has attr field
+    attr: str = None  # Attribute of the pattern, only output has attr field
 
 
 class TagSerializer(json.JSONEncoder):
@@ -29,6 +31,11 @@ class TagSerializer(json.JSONEncoder):
         return super().default(obj)
 
 
+
+xla_pattern_marking_lib.define(
+    "tag_input(Tensor x, int i, str tag_name, int total_input) -> Tensor")
+
+@impl(xla_pattern_marking_lib, "tag_input", "CompositeExplicitAutograd")
 def tag_input(x, i, tag_name, total_input):
     if tag_name not in tag_input.counter:
         tag_input.counter[tag_name] = 0
@@ -43,6 +50,9 @@ def tag_input(x, i, tag_name, total_input):
     tag_input.counter[tag_name] += 1
     return x
 
+@impl(xla_pattern_marking_lib, "tag_input", "Meta")
+def tag_input(x, i, tag_name, total_input):
+   return torch.empty_like(x)
 
 tag_input.counter = dict()
 
@@ -51,12 +61,16 @@ def select_output(outputs, pos):
     return outputs[pos]
 
 
-def tag_output(x, pos, tag_name, total_output, pattern_attrs=None):
+xla_pattern_marking_lib.define(
+    "tag_output(Tensor x, int pos, str tag_name, int total_output, str attr) -> Tensor")
+
+@impl(xla_pattern_marking_lib, "tag_output", "CompositeExplicitAutograd")
+def tag_output(x, pos, tag_name, total_output, pattern_attrs):
     if tag_name not in tag_output.counter:
         tag_output.counter[tag_name] = 0
 
-    if pattern_attrs is None:
-        pattern_attrs = {}
+    # if pattern_attrs is None:
+    #     pattern_attrs = {}
 
     tag_count = tag_output.counter[tag_name]
     match_id = int(tag_count / total_output)
@@ -76,6 +90,10 @@ def tag_output(x, pos, tag_name, total_output, pattern_attrs=None):
     return x
 
 
+@impl(xla_pattern_marking_lib, "tag_output", "Meta")
+def tag_output(x, pos, tag_name, total_output, pattern_attrs=None):
+   return torch.empty_like(x)
+
 tag_output.counter = dict()
 
 
@@ -92,7 +110,8 @@ def get_pattern_node(
             placeholder = new_g.placeholder("input_{}".format(input_idx))
             tagged_placeholders.append(
                 new_g.call_function(
-                    tag_input, (placeholder, input_idx, pattern_name, n_tensor_inputs)
+                    # tag_input, (placeholder, input_idx, pattern_name, n_tensor_inputs)
+                    torch.ops.xla_pattern_marking.tag_input, (placeholder, input_idx, pattern_name, n_tensor_inputs)
                 )
             )
             input_idx += 1
@@ -116,7 +135,8 @@ def get_pattern_node(
         pattern_attrs = {}
     for pos, output in enumerate(output_nodes):
         node_tagged_out = new_g.call_function(
-            tag_output, (output, pos, pattern_name, n_outputs, pattern_attrs)
+            # tag_output, (output, pos, pattern_name, n_outputs, pattern_attrs)
+            torch.ops.xla_pattern_marking.tag_output, (output, pos, pattern_name, n_outputs, str(pattern_attrs))
         )
         tagged_output_nodes.append(node_tagged_out)
 
@@ -185,9 +205,12 @@ def extract_and_replace_const_from_matched_pattern(
                 n.update_arg(loc.tracker.pattern_arg_pos, pattern_arg_val)
             if n.op == "call_function" and n.target == tag_output:
                 attr_arg_idx = 4  # TODO: move to kwarg of the 'tag_ouptut'
-                attr_dict = dict(n.args[attr_arg_idx])
+                attr_dict = n.args[attr_arg_idx]
+                print(attr_dict)
+                import ast
+                attr_dict = ast.literal_eval(attr_dict)
                 attr_dict[loc.tracker.attr_name] = pattern_arg_val
-                n.update_arg(4, attr_dict)
+                n.update_arg(4, str(attr_dict))
 
 
 def find_const_attr_loc(pattern, pattern_args, tracker: ConstAttrTracker):
@@ -261,7 +284,8 @@ def mark_pattern(
     # FIXME: torch.export will generate a dangling input if there is constant
     pattern_ep = torch.export.export(pattern, pattern_args)
   # Build pattern replacement
-  replace_pattern_gm = get_pattern_node(pattern_name, pattern, pattern_args,
+  replace_pattern_gm = get_pattern_node(pattern_name, pattern, pattern_ep, pattern_args,
+                                        pattern_kwargs,
                                         pattern_attrs)
   print("check replacement gm")
   replace_pattern_gm.graph.print_tabular()
@@ -295,7 +319,7 @@ def mark_pattern(
   return exported_ep
 
 def xla_add_tag(tensor: torch.Tensor, tag: str) -> torch.Tensor:
-  if isinstance(tensor, torch.Tensor) and tensor.get_device() == xm.xla_device().index: 
+  if isinstance(tensor, torch.Tensor) and tensor.get_device() == xm.xla_device(): 
     torch_xla._XLAC._xla_add_tag(tensor, tag)
   return tensor
 
