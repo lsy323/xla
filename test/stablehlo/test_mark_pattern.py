@@ -199,7 +199,7 @@ m = M().eval()
 args = (torch.rand(200, 200),)
 model_ep = torch.export.export(m, args)
 
-model_ep = tagging_utils.mark_pattern2(
+model_ep = tagging_utils.mark_pattern(
     pattern_name="log_softmax_pattern",
     exported_ep=model_ep,
     pattern=log_softmax_pattern,

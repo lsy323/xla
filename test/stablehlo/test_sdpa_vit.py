@@ -37,7 +37,7 @@ v = torch.rand(32, 8, 128, 64)
 
 exported_model.graph_module.graph.print_tabular()
 
-exported_model = tagging_utils.mark_pattern2(
+exported_model = tagging_utils.mark_pattern(
     "sdpa_pattern",
     exported_model,
     fused_sdpa_pattern,
@@ -49,7 +49,7 @@ exported_model = tagging_utils.mark_pattern2(
         ).track(0.1, 0.2)
     ],
 )
-exported_model = tagging_utils.mark_pattern2(
+exported_model = tagging_utils.mark_pattern(
     "sdpa_pattern",
     exported_model,
     non_fused_sdpa_pattern,

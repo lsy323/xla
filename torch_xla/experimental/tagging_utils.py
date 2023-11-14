@@ -183,7 +183,7 @@ def insert_marker(graph: Graph, node: Node, tag: PortTag):
     return n
 
 
-def mark_pattern2(
+def mark_pattern(
     pattern_name: str,
     exported_ep: GraphModule,
     pattern: Union[Callable, torch.nn.Module],
@@ -249,68 +249,6 @@ def mark_pattern2(
           output_spec.arg.name = n.name
   orig_graph.lint()
   orig_graph.print_tabular()
-  return exported_ep
-
-
-def mark_pattern(
-    pattern_name: str,
-    exported_ep: GraphModule,
-    pattern: Union[Callable, GraphModule, torch.nn.Module],
-    pattern_args: Tuple = None,
-    pattern_kwargs: Dict = None,
-    pattern_attrs: Optional[Dict[str, Any]] = None,
-    const_attr_trackers: Optional[List[Union[ConstAttrLoc,
-                                             ConstAttrTracker]]] = None,
-):
-  exported_ep = copy.deepcopy(exported_ep)
-  print("check whole graph")
-  # torch export adds additional aten.clone nodes to produce contiguous in memory tensors
-  # depending on tensor sizes for runtime efficiency. However, these unpredictable clone
-  # nodes can break the pattern matching. Thus remove all clones in model and pattern graphs.
-  eliminate_clone_ops(exported_ep.graph_module.graph)
-  exported_ep.graph_module.graph.print_tabular()
-
-  pattern_args = tuple(pattern_args)
-
-  if isinstance(pattern, GraphModule):
-    pattern_ep = copy.deepcopy(pattern)
-  else:
-    # pattern_ep = torch.export.export(pattern, pattern_args, pattern_kwargs)
-    # FIXME: torch.export will generate a dangling input if there is constant
-    pattern_ep = torch.export.export(pattern, pattern_args)
-  # Build pattern replacement
-  replace_pattern_gm = get_pattern_node(pattern_name, pattern, pattern_ep,
-                                        pattern_args, pattern_kwargs,
-                                        pattern_attrs)
-  print("check replacement gm")
-  replace_pattern_gm.graph.print_tabular()
-  print("check pattern gm")
-  eliminate_clone_ops(pattern_ep.graph_module.graph)
-  pattern_ep.graph_module.graph.print_tabular()
-  # Eliminate placeholder for const, which is dangling, and trgerring assertion in matching
-  eliminate_dangling_arg(pattern_ep.graph_module.graph)
-
-  matches = subgraph_rewriter.replace_pattern_with_filters(
-      exported_ep.graph_module,
-      pattern_ep.graph_module,
-      replace_pattern_gm,
-      ignore_literals=True,
-  )
-  print("check matches")
-  print(matches)
-
-  if const_attr_trackers:
-    for tracker in const_attr_trackers:
-      if isinstance(tracker, ConstAttrLoc):
-        loc = tracker
-      else:
-        loc = find_const_attr_loc(pattern, pattern_args, tracker)
-
-      assert loc is not None
-      print(loc)
-      extract_and_replace_const_from_matched_pattern(pattern, matches, loc)
-
-  exported_ep.graph_module.graph.print_tabular()
   return exported_ep
 
 

@@ -37,7 +37,7 @@ m = M().eval()
 args = (attn_in, attn_in2)
 model_ep = torch.export.export(m, args)
 pattern_args = (q, k, v)
-model_ep = tagging_utils.mark_pattern2(
+model_ep = tagging_utils.mark_pattern(
     "sdpa_pattern",
     model_ep,
     sdpa_pattern,
