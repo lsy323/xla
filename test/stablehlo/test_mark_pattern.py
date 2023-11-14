@@ -24,7 +24,7 @@ from torch_xla.stablehlo import exported_program_to_stablehlo
 #         out1, out2 = dual_output(exp_x, exp_y)
 #         out = torch.log(out1) + torch.log(out2)
 #         return out
-    
+
 # m = M().eval()
 # args = (torch.rand(2, 3), torch.rand(2, 3))
 # pattern_args = (torch.rand(2, 3), torch.rand(2, 3))
@@ -51,14 +51,12 @@ from torch_xla.stablehlo import exported_program_to_stablehlo
 #     out = torch.log(out)
 #     return out
 
-
 # def my_inverse(x):
 #     return torch.div(1, x) + x
 
 # # Pattern to match in the exported graph.
 # def pattern(x, y):
 #     return my_softmax(x, y)
-
 
 # # Pattern to match in the exported graph.
 # def inverse_pattern(x):
@@ -145,7 +143,7 @@ from torch_xla.stablehlo import exported_program_to_stablehlo
 #         out = my_softmax(exp_x, exp_y)
 #         out = torch.abs(out)
 #         return out
-    
+
 # # Pattern to match in the exported graph.
 # def pattern(x, y):
 #     return my_softmax(x, y)
@@ -169,35 +167,51 @@ from torch_xla.stablehlo import exported_program_to_stablehlo
 # hlo = xm.get_hlo([res])
 # print(hlo)
 
+
 #############
 # Pattern to match in the exported graph.
 def log_softmax_pattern(x, dim):
-    return torch.nn.LogSoftmax(dim=dim)(x)
+  return torch.nn.LogSoftmax(dim=dim)(x)
+
 
 class M(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
 
-    def forward(self, x):
-        r = x
-        for idx in range(5):
-            r = torch.nn.LogSoftmax(dim=idx%2)(r) * x
-        return r
+  def __init__(self):
+    super().__init__()
+
+  def forward(self, x):
+    r = x
+    for idx in range(5):
+      r = torch.nn.LogSoftmax(dim=idx % 2)(r) * x
+    return r
+
+
+# class M(torch.nn.Module):
+
+#   def __init__(self):
+#     super().__init__()
+
+#   def forward(self, x):
+#     r = torch.nn.LogSoftmax(dim=0)(x) * x
+#     return r
 
 m = M().eval()
 args = (torch.rand(200, 200),)
 model_ep = torch.export.export(m, args)
 
-model_ep = tagging_utils.mark_pattern(
+model_ep = tagging_utils.mark_pattern2(
     pattern_name="log_softmax_pattern",
     exported_ep=model_ep,
     pattern=log_softmax_pattern,
     pattern_args=(torch.rand(10, 10, 10), 1),
     const_attr_trackers=[
-        tagging_utils.ConstAttrTracker("dim", pattern_arg_pos=1).track(0).track(1).track(2),
+        tagging_utils.ConstAttrTracker(
+            "dim", pattern_arg_pos=1).track(0).track(1).track(2),
     ])
+
 shlo_bundle = exported_program_to_stablehlo(model_ep)
 print(shlo_bundle.get_stablehlo_text())
+
 # model_ep.run_decompositions()
 # print("check here")
 # model_ep.graph_module.graph.print_tabular()
