@@ -174,10 +174,8 @@ xla::Shape XlaNode::GetOpShape(
 std::string XlaNode::ToString() const {
   std::stringstream ss;
   ss << torch::lazy::Node::ToString() << ", xla_shape=" << xla_shape_;
-  ss << ", " << "tags: ";
-  for (const auto& tag : experimental_tags_) {
-    ss << tag;
-  }
+  ss << ", dynamic_dims: (" << absl::StrJoin(unbounded_dynamic_dims_, ", ")
+     << ')';
   return ss.str();
 }
 
