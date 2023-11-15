@@ -833,6 +833,7 @@ def mark_step(wait=False):
   devctx = _run_step_closures()
   torch_xla._XLAC._set_all_reduce_token(devctx.device, None)
 
+
 def get_hlo(tensors=None) -> str:
   """Get HLO for the computation graph in string format.
 
@@ -844,7 +845,8 @@ def get_hlo(tensors=None) -> str:
   """
   if tensors is None:
     tensors = []
-  return torch_xla._XLAC._get_hlo(tensors, torch_xla._XLAC._xla_get_default_device(), [])
+  return torch_xla._XLAC._get_hlo(tensors,
+                                  torch_xla._XLAC._xla_get_default_device(), [])
 
 
 def get_stablehlo(tensors=None) -> str:

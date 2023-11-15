@@ -1,13 +1,18 @@
 import copy
 import dataclasses
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
 import torch
-from torch.fx import subgraph_rewriter
-from torch.fx import Graph, GraphModule
 import torch_xla
+import torch_xla.experimental.xla_marker
+from torch.export import ExportedProgram
+from torch.export.graph_signature import TensorArgument
+from torch.fx import Graph, GraphModule, Node, subgraph_rewriter
+from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
+from torch.utils import _pytree as pytree
 from torch_xla.core import xla_model as xm
-from typing import List, Tuple, Dict, Any, Callable, Union, Optional
 
 __all__ = ["mark_pattern"]
 
@@ -18,7 +23,7 @@ class PortTag:
   pos: int  # Arg/return position
   id: int  # Patten instance id
   is_input: bool = True  # If the tagged tensor is input/output
-  attr: Dict = None  # Attribute of the pattern, only output has attr field
+  attr: str = None  # Attribute of the pattern, only output has attr field
 
 
 class TagSerializer(json.JSONEncoder):
@@ -29,105 +34,13 @@ class TagSerializer(json.JSONEncoder):
     return super().default(obj)
 
 
-def tag_input(x, i, tag_name, total_input):
-  if tag_name not in tag_input.counter:
-    tag_input.counter[tag_name] = 0
-  tag_count = tag_input.counter[tag_name]
-  match_id = int(tag_count / total_input)
-  print("tag_input name: {}, input pos: {}, match_id: {}".format(
-      tag_name, i, match_id))
-  torch_xla._XLAC._xla_add_tag(
-      x,
-      json.dumps(
-          PortTag(tag_name, i, match_id, is_input=True), cls=TagSerializer))
-  tag_input.counter[tag_name] += 1
-  return x
-
-
-tag_input.counter = dict()
-
-
-def select_output(outputs, pos):
-  return outputs[pos]
-
-
-def tag_output(x, pos, tag_name, total_output, pattern_attrs=None):
-  if tag_name not in tag_output.counter:
-    tag_output.counter[tag_name] = 0
-  if pattern_attrs is None:
-    pattern_attrs = {}
-
-  tag_count = tag_output.counter[tag_name]
-  match_id = int(tag_count / total_output)
-  print("tag_output name: {}, output pos {}, match_id: {}, attr: {}".format(
-      tag_name, pos, match_id, pattern_attrs))
-  torch_xla._XLAC._xla_add_tag(
-      x,
-      json.dumps(
-          PortTag(tag_name, pos, match_id, is_input=False, attr=pattern_attrs),
-          cls=TagSerializer,
-      ),
-  )
-  tag_output.counter[tag_name] += 1
-  return x
-
-
-tag_output.counter = dict()
-
-
-def get_pattern_node(pattern_name, pattern, args, pattern_attrs=None):
-  pattern_ep = torch.export.export(pattern, args)
-  n_inputs = len(pattern_ep.graph_signature.user_inputs)
-  n_outputs = len(pattern_ep.graph_signature.user_outputs)
-  print("pattern has {} inputs, {} outputs.".format(n_inputs, n_outputs))
-
-  if pattern_attrs is None:
-    pattern_attrs = {}
-
-  new_g = Graph()
-  tagged_placeholders = []
-  n_tensor_inputs = sum(map(torch.is_tensor, args))
-  i = 0
-  for arg in args:
-    if torch.is_tensor(arg):
-      placeholder = new_g.placeholder("input_{}".format(i))
-      tagged_placeholders.append(
-          new_g.call_function(tag_input,
-                              (placeholder, i, pattern_name, n_tensor_inputs)))
-      i += 1
-    else:
-      tagged_placeholders.append(arg)
-
-  if isinstance(pattern, torch.nn.Module):
-    node_tagged = new_g.call_module("pattern")
-  else:
-    node_tagged = new_g.call_function(pattern, tuple(tagged_placeholders))
-
-  output_nodes = []
-  if n_outputs > 1:
-    for pos in range(n_outputs):
-      output_nodes.append(
-          new_g.call_function(select_output, (node_tagged, pos)))
-  else:
-    output_nodes = [node_tagged]
-
-  tagged_output_nodes = []
-  for pos, output in enumerate(output_nodes):
-    node_tagged_out = new_g.call_function(
-        tag_output, (output, pos, pattern_name, n_outputs, pattern_attrs))
-    tagged_output_nodes.append(node_tagged_out)
-
-  node_out = new_g.output(tuple(tagged_output_nodes))
-  replace_gm = GraphModule(dict(), new_g)
-  return replace_gm
-
-
 @dataclass
-class ScalarAttrTracker:
+class ConstAttrTracker:
   attr_name: str
-  pattern_arg_pos: int
-  transform: Callable[Any, Any] = lambda x: x
-  inverse_transform: Callable[Any, Any] = lambda x: x
+  pattern_arg_pos: int = -1
+  pattern_arg_key: str = ""
+  transform: Callable = lambda x: x
+  inverse_transform: Callable = lambda x: x
   source_targets: List[Tuple[Any,
                              Any]] = dataclasses.field(default_factory=list)
 
@@ -158,62 +71,71 @@ class ScalarAttrTracker:
 
 
 @dataclass
-class ScalarAttrLoc:
-  tracker: ScalarAttrTracker
+class ConstAttrLoc:
+  tracker: ConstAttrTracker
   node_name: str
-  pos: int
+  pos: Union[int, str]
 
 
-def extract_and_replace_scalar_from_matched_pattern(
-    pattern, matches: List[subgraph_rewriter.ReplacedPatterns],
-    loc: ScalarAttrLoc):
+def extract_and_replace_const_from_matched_pattern(matches: List[InternalMatch],
+                                                   loc: ConstAttrLoc):
   val = None
+  matched_const_vals = []
   for match in matches:
     for k, v in match.nodes_map.items():
       if k.name == loc.node_name:
-        # print(str(v.args[loc.pos]))
         if loc.pos is not None:
-          val = v.args[loc.pos]
-        # TODO Handel kwarg
-    assert val is not None
+          if isinstance(loc.pos, int):
+            val = v.args[loc.pos]
+          else:
+            if loc.pos in v.kwargs.keys():
+              val = v.kwargs[loc.pos]
     pattern_arg_val = loc.tracker.inverse_transform(val)
-    for n in match.replacements:
-      if n.op == "call_function" and n.target == pattern:
-        n.update_arg(loc.tracker.pattern_arg_pos, pattern_arg_val)
-      if n.op == "call_function" and n.target == tag_output:
-        attr_arg_idx = 4  # TODO: move to kwarg of the 'tag_ouptut'
-        attr_dict = dict(n.args[attr_arg_idx])
-        attr_dict[loc.tracker.attr_name] = pattern_arg_val
-        n.update_arg(4, attr_dict)
+    matched_const_vals.append(pattern_arg_val)
+  return loc.tracker.attr_name, matched_const_vals
 
 
-def find_scalar_attr_loc(pattern, pattern_args, tracker: ScalarAttrTracker):
-  scalar_loc_intersections = None
+def find_const_attr_loc(pattern, pattern_args, tracker: ConstAttrTracker):
+  const_loc_intersections = None
   for source, target in tracker.source_targets:
     track_args = list(pattern_args)
     track_args[tracker.pattern_arg_pos] = source
     ep = torch.export.export(pattern, tuple(track_args))
+    ep.graph_module.graph.print_tabular()
 
-    scalar_locs = set()
+    const_locs = set()
     nodes = ep.graph_module.graph.nodes
     for n in nodes:
       for arg_pos, arg in enumerate(n.args):
         if type(arg) == type(target) and arg == target:
-          scalar_locs.add((n.name, arg_pos))
+          const_locs.add((n.name, arg_pos))
+      for attr, val in n.kwargs.items():
+        if type(val) == type(target) and val == target:
+          const_locs.add((n.name, attr))
 
-    if scalar_loc_intersections is None:
-      scalar_loc_intersections = scalar_locs
+    if const_loc_intersections is None:
+      const_loc_intersections = const_locs
     else:
-      scalar_loc_intersections = scalar_loc_intersections & scalar_locs
+      const_loc_intersections = const_loc_intersections & const_locs
 
-    if not scalar_loc_intersections:
+    if not const_loc_intersections:
       break
 
-  if not scalar_loc_intersections:
+  if not const_loc_intersections:
     return None
   # Choose any occurrence as the attr provider
-  node_name, arg_pos = scalar_loc_intersections.pop()
-  return ScalarAttrLoc(tracker, node_name, arg_pos)
+  node_name, pos = const_loc_intersections.pop()
+  return ConstAttrLoc(tracker, node_name, pos)
+
+
+def eliminate_clone_ops(graph: Graph):
+  # torch export adds additional aten.clone nodes to produce contiguous in memory tensors
+  # depending on tensor sizes for runtime efficiency. However, these unpredictable clone
+  # nodes can break the pattern matching. Thus remove all clones in model and pattern graphs.
+  for n in graph.nodes:
+    if n.op == "call_function" and n.name.startswith("clone"):
+      n.replace_all_uses_with(n.args[0])
+      graph.erase_node(n)
 
 
 def eliminate_dangling_arg(graph: Graph):
@@ -225,55 +147,156 @@ def eliminate_dangling_arg(graph: Graph):
     graph.erase_node(n)
 
 
+def canonicalize_exported_graph(graph: Graph):
+  eliminate_dangling_arg(graph)
+  eliminate_clone_ops(graph)
+
+
+def get_node_from_name(graph: Graph, name: str) -> Node:
+  for n in graph.nodes:
+    if n.name == name:
+      return n
+  return None
+
+
+def get_pattern_placeholder_in_order(pattern_ep: ExportedProgram):
+  # Exclude const arg
+  return [
+      spec.arg.name
+      for spec in pattern_ep.graph_signature.input_specs
+      if isinstance(spec.arg, TensorArgument)
+  ]
+
+
+def get_pattern_outputs_in_order(pattern_ep: ExportedProgram):
+  return [spec.arg.name for spec in pattern_ep.graph_signature.output_specs]
+
+
+def insert_marker(graph: Graph, node: Node, tag: PortTag):
+  with graph.inserting_after(node):
+    n = graph.call_function(
+        torch.ops.xla_pattern_marking.tag_tensor,
+        args=(node, json.dumps(tag, cls=TagSerializer)),
+    )
+    node.replace_all_uses_with(n)
+    n.update_arg(0, node)
+    return n
+
+
 def mark_pattern(
     pattern_name: str,
     exported_ep: GraphModule,
-    pattern: Union[Callable, GraphModule, torch.nn.Module],
-    # Limit the pattern to not have kwargs
-    pattern_args: Tuple,
-    pattern_attrs: Optional[Dict[str, Any]] = None,
-    scalar_attr_trackers: Optional[List[Union[ScalarAttrLoc,
-                                              ScalarAttrTracker]]] = None,
+    pattern: Union[Callable, torch.nn.Module],
+    pattern_args: Tuple = None,
+    pattern_attrs: Optional[Dict[str, Any]] = dict(),
+    const_attr_trackers: Optional[List[Union[ConstAttrLoc,
+                                             ConstAttrTracker]]] = None,
 ):
-  print("check whole graph")
-  exported_ep.graph_module.graph.print_tabular()
+  exported_ep = copy.deepcopy(exported_ep)
+  orig_graph = exported_ep.graph_module.graph
 
-  pattern_args = tuple(pattern_args)
+  pattern_ep = torch.export.export(pattern, pattern_args)
 
-  if isinstance(pattern, GraphModule):
-    pattern_ep = pattern
-  else:
-    # pattern_ep = torch.export.export(pattern, pattern_args, pattern_kwargs)
-    # FIXME: torch.export will generate a dangling input if there is constant
-    pattern_ep = torch.export.export(pattern, pattern_args)
-  # Build pattern replacement
-  replace_pattern_gm = get_pattern_node(pattern_name, pattern, pattern_args,
-                                        pattern_attrs)
-  print("check replacement gm")
-  replace_pattern_gm.graph.print_tabular()
-  print("check pattern gm")
-  pattern_ep.graph_module.graph.print_tabular()
-  # Eliminate placeholder for const, which is dangling, and trgerring assertion in matching
-  eliminate_dangling_arg(pattern_ep.graph_module.graph)
-  matches = subgraph_rewriter.replace_pattern_with_filters(
-      exported_ep.graph_module,
-      pattern_ep.graph_module,
-      replace_pattern_gm,
+  pattern_graph = pattern_ep.graph_module.graph
+  # canonicalize_exported_graph(orig_graph)
+  canonicalize_exported_graph(pattern_graph)
+
+  matcher = SubgraphMatcher(
+      pattern_ep.graph_module.graph,
+      match_output=False,
+      match_placeholder=False,
+      remove_overlapping_matches=True,
       ignore_literals=True,
   )
-  print("check matches")
-  print(matches)
 
-  if scalar_attr_trackers:
-    for tracker in scalar_attr_trackers:
-      if isinstance(tracker, ScalarAttrLoc):
+  matches: List[InternalMatch] = matcher.match(exported_ep.graph_module.graph)
+
+  const_attr_dicts = dict()  # name -> list[matched_vals]
+  if const_attr_trackers:
+    for tracker in const_attr_trackers:
+      if isinstance(tracker, ConstAttrLoc):
         loc = tracker
       else:
-        loc = find_scalar_attr_loc(pattern, pattern_args, tracker)
-
+        loc = find_const_attr_loc(pattern, pattern_args, tracker)
       assert loc is not None
       print(loc)
-      extract_and_replace_scalar_from_matched_pattern(pattern, matches, loc)
+      attr_name, vals = extract_and_replace_const_from_matched_pattern(
+          matches, loc)
+      const_attr_dicts[attr_name] = vals
 
-  exported_ep.graph_module.graph.print_tabular()
+  placeholder_list = get_pattern_placeholder_in_order(pattern_ep)
+  output_list = get_pattern_outputs_in_order(pattern_ep)
+  for match_idx, m in enumerate(matches):
+    # Get tracked const vals
+    attr = copy.deepcopy(pattern_attrs)
+    for attr_name, vals in const_attr_dicts.items():
+      attr[attr_name] = vals[match_idx]
+    for idx, placeholder in enumerate(placeholder_list):
+      matched_placeholder = m.nodes_map[get_node_from_name(
+          pattern_graph, placeholder)]
+      tag = PortTag(pattern_name, idx, match_idx, is_input=True, attr=attr)
+      insert_marker(orig_graph, matched_placeholder, tag)
+
+    for idx, output in enumerate(output_list):
+      matched_output = m.nodes_map[get_node_from_name(pattern_graph, output)]
+      tag = PortTag(pattern_name, idx, match_idx, is_input=False, attr=attr)
+      n = insert_marker(orig_graph, matched_output, tag)
+      # If marking node is inserted after output, update graph_signature
+      for output_spec in exported_ep.graph_signature.output_specs:
+        if isinstance(
+            output_spec.arg,
+            TensorArgument) and output_spec.arg.name == matched_output.name:
+          output_spec.arg.name = n.name
+  orig_graph.lint()
+  orig_graph.print_tabular()
+  return exported_ep
+
+
+def xla_add_tag(tensor: torch.Tensor, tag: str) -> torch.Tensor:
+  if isinstance(tensor,
+                torch.Tensor) and tensor.get_device() == xm.xla_device():
+    torch_xla._XLAC._xla_add_tag(tensor, tag)
+  return tensor
+
+
+def fx_node_add_tag(n, tag):
+  return pytree.tree_map_only(torch.Tensor, lambda t: xla_add_tag(t, tag), n)
+
+
+def mark_model_explorer_loc(exported_ep: GraphModule):
+
+  def class_fullname(klass):
+    module = klass.__module__
+    if module == "builtins":
+      return klass.__qualname__
+    return module + "." + klass.__qualname__
+
+  graph = exported_ep.graph_module.graph
+
+  for n in list(graph.nodes):
+    if n.op != "call_function":
+      continue
+
+    if "nn_module_stack" not in n.meta:
+      return n
+
+    nn_module_stack = n.meta["nn_module_stack"]
+
+    layers = []
+    for var, (path, cls) in nn_module_stack.items():
+      iid = path.split(".")[-1]
+      layer = class_fullname(cls)
+      if iid != "":
+        layer = f"{layer}__{iid}"
+      layers.append(layer)
+    layers.append("aten__" + n.name)
+
+    layers_loc = "/".join(layers)
+
+    users = list(n.users)
+    with graph.inserting_after(n):
+      add_tag_node = graph.call_function(
+          fx_node_add_tag, args=(n, json.dumps({"layers_loc": layers_loc})))
+      for user in users:
+        user.replace_input_with(n, add_tag_node)
   return exported_ep

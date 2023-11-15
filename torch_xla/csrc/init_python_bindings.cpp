@@ -648,6 +648,11 @@ void MapXlaEnvVarsToLazy() {
       runtime::sys_util::GetEnvInt("XLA_TRIM_GRAPH_SIZE", 100000);
 }
 
+at::Tensor MarkTensor(const at::Tensor& input, const std::string& info) {
+  auto result = tensor_methods::mark_tensor(bridge::GetXlaTensor(input), info);
+  return bridge::AtenFromXlaTensor(std::move(result));
+}
+
 std::string GetPyTypeString(py::handle obj) {
   std::string type = obj.attr("__class__").attr("__name__").cast<std::string>();
   return type;
@@ -1982,11 +1987,14 @@ void InitXlaModuleBindings(py::module m) {
           return handles;
         });
   m.def("_xla_add_tag",
-        [](const at::Tensor& input, const std::string& tag) {
+        [](const at::Tensor& input, const std::string& info) {
           TORCH_LAZY_COUNTER("XlaAddTag", 1);
-          std::cout << "in add tag" << std::endl;
-          XLATensorPtr xtensor = bridge::GetXlaTensor(input);
-          xtensor->AddTag(tag);
+          at::Tensor result;
+          {
+            NoGilSection nogil;
+            result = MarkTensor(input, info);
+          }
+          return result;
         });
 
   // -------------Dynamo Integration API Start-------------------------
