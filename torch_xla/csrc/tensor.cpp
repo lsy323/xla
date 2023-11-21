@@ -38,8 +38,6 @@
 #include "torch_xla/csrc/runtime/env_vars.h"
 #include "torch_xla/csrc/runtime/pjrt_computation_client.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
-#include "torch_xla/csrc/runtime/thread_pool.h"
-#include "torch_xla/csrc/runtime/unique.h"
 #include "torch_xla/csrc/runtime/xla_util.h"
 #include "torch_xla/csrc/tensor_util.h"
 #include "torch_xla/csrc/torch_util.h"
@@ -642,7 +640,7 @@ c10::SymNode XLASymNodeImpl::add(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::sub(const c10::SymNode& other) {
-  TORCH_LAZY_FN_COUNTER("xla::size_");
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
 
   torch_xla::XLASymNodeImpl* p_other =
       dynamic_cast<XLASymNodeImpl*>(other.get());
@@ -681,7 +679,7 @@ c10::SymNode XLASymNodeImpl::floordiv(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::mod(const c10::SymNode& other) {
-  TORCH_LAZY_FN_COUNTER("xla::size_");
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
   torch_xla::XLASymNodeImpl* p_other =
       dynamic_cast<XLASymNodeImpl*>(other.get());
   XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
@@ -700,7 +698,7 @@ c10::SymNode XLASymNodeImpl::eq(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::ne(const c10::SymNode& other) {
-  TORCH_LAZY_FN_COUNTER("xla::size_");
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
   auto p_other = dynamic_cast<XLASymNodeImpl*>(other.get());
   XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
   XLA_CHECK(p_other->is_int()) << __FUNCTION__ << " with non-int NYI";
@@ -714,7 +712,7 @@ c10::SymNode XLASymNodeImpl::gt(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::lt(const c10::SymNode& other) {
-  TORCH_LAZY_FN_COUNTER("xla::size_");
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
   auto p_other = dynamic_cast<XLASymNodeImpl*>(other.get());
   XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
   XLA_CHECK(p_other->is_int()) << __FUNCTION__ << " with non-int NYI";
@@ -728,7 +726,7 @@ c10::SymNode XLASymNodeImpl::le(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::ge(const c10::SymNode& other) {
-  TORCH_LAZY_FN_COUNTER("xla::size_");
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
   auto p_other = dynamic_cast<XLASymNodeImpl*>(other.get());
   XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
   XLA_CHECK(p_other->is_int()) << __FUNCTION__ << " with non-int NYI";
@@ -815,7 +813,7 @@ c10::SymNode XLASymNodeImpl::is_non_overlapping_and_dense(
 }
 
 c10::SymNode XLASymNodeImpl::clone() {
-  TORCH_LAZY_FN_COUNTER("xla::size_");
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
   return c10::make_intrusive<XLASymNodeImpl>(node(), pytype_);
 }
 
@@ -896,6 +894,27 @@ int64_t XLATensor::GetHandle() const {
 void XLATensor::AddTag(const std::string& tag) {
   auto* xla_node = dynamic_cast<XlaNode*>(GetIrValue().node.get());
   xla_node->AddTag(tag);
+}
+
+void XLATensor::MarkDynamicDimension(uint32_t dim) {
+  auto* xla_node = dynamic_cast<XlaNode*>(GetIrValue().node.get());
+  xla_node->MarkDynamicDimension(dim);
+}
+
+void XLATensor::SetCustomOpName(const std::string& op_name) {
+  auto* xla_node = dynamic_cast<XlaNode*>(CurrentIrValue().node.get());
+  if (xla_node != nullptr) {
+    xla_node->SetCustomOpName(op_name);
+  }
+}
+
+const std::string& XLATensor::GetCustomOpName() const {
+  auto* xla_node = dynamic_cast<XlaNode*>(CurrentIrValue().node.get());
+  if (xla_node != nullptr) {
+    return xla_node->custom_op_name();
+  } else {
+    return "";
+  }
 }
 
 }  // namespace torch_xla

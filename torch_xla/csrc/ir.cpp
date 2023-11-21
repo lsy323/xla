@@ -174,10 +174,12 @@ xla::Shape XlaNode::GetOpShape(
 std::string XlaNode::ToString() const {
   std::stringstream ss;
   ss << torch::lazy::Node::ToString() << ", xla_shape=" << xla_shape_;
-  ss << ", " << "tags: ";
+  ss << ", tags: ";
   for (const auto& tag : experimental_tags_) {
     ss << tag;
   }
+  ss << ", dynamic_dims: (" << absl::StrJoin(unbounded_dynamic_dims_, ", ")
+     << ')';
   return ss.str();
 }
 
@@ -230,6 +232,10 @@ void XlaNode::UpdateShardingHash() {
           torch::lazy::HashCombine(sharding_hash_, (uint32_t)is_dyn_dim);
     }
   }
+}
+
+void XlaNode::SetCustomOpName(const std::string& op_name) {
+  custom_op_name_ = op_name;
 }
 
 }  // namespace torch_xla
