@@ -43,7 +43,6 @@ namespace runtime {
 
 namespace {
 
-using namespace mlir;
 using nlohmann::json;
 
 struct BoundaryMetadata {
@@ -97,10 +96,11 @@ struct BoundaryMetadata {
   }
 };
 
-class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
+class PrepareTorchXLABoundariesPass
+    : public mlir::OperationPass<mlir::ModuleOp> {
  public:
   explicit PrepareTorchXLABoundariesPass()
-      : OperationPass<ModuleOp>::OperationPass(
+      : mlir::OperationPass<mlir::ModuleOp>::OperationPass(
             mlir::TypeID::get<PrepareTorchXLABoundariesPass>()) {}
 
   ~PrepareTorchXLABoundariesPass() override = default;
@@ -110,18 +110,18 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
     EraseXlaMarkTensorOps();
   }
 
-  StringRef getName() const override {
+  mlir::StringRef getName() const override {
     return llvm::getTypeName<PrepareTorchXLABoundariesPass>();
   }
 
-  std::unique_ptr<Pass> clonePass() const override {
+  std::unique_ptr<mlir::Pass> clonePass() const override {
     return std::make_unique<PrepareTorchXLABoundariesPass>(*this);
   }
 
  private:
-  llvm::DenseMap<const Operation*, size_t> BuildOperationsLineNumberMap(
-      func::FuncOp func) const {
-    llvm::DenseMap<const Operation*, size_t> op_line_num;
+  llvm::DenseMap<const mlir::Operation*, size_t> BuildOperationsLineNumberMap(
+      mlir::func::FuncOp func) const {
+    llvm::DenseMap<const mlir::Operation*, size_t> op_line_num;
     for (const auto& op : llvm::enumerate(func.getOps())) {
       op_line_num[&op.value()] = op.index();
     }
@@ -130,9 +130,10 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
 
   void BuildStableHLOCompositeOps() {
     auto module_op = getOperation();
-    llvm::SmallVector<func::FuncOp> raw_funcs(module_op.getOps<func::FuncOp>());
+    llvm::SmallVector<mlir::func::FuncOp> raw_funcs(
+        module_op.getOps<mlir::func::FuncOp>());
     for (auto func : raw_funcs) {
-      llvm::DenseMap<const Operation*, size_t> op_line_num =
+      llvm::DenseMap<const mlir::Operation*, size_t> op_line_num =
           BuildOperationsLineNumberMap(func);
       for (auto& op : func.getOps()) {
         BuildStableHLOCompositeOp(&op, op_line_num);
@@ -140,7 +141,7 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
     }
   }
 
-  bool IsXlaMarkTensorOp(Operation* op) {
+  bool IsXlaMarkTensorOp(mlir::Operation* op) {
     if (op == nullptr) {
       return false;
     }
@@ -150,7 +151,8 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
     if (op->getName().getStringRef() != "stablehlo.custom_call") {
       return false;
     }
-    auto target_name = op->getAttr("call_target_name").dyn_cast<StringAttr>();
+    auto target_name =
+        op->getAttr("call_target_name").dyn_cast<mlir::StringAttr>();
     if (target_name == nullptr || target_name.str() != "xla_mark_tensor") {
       return false;
     }
@@ -159,20 +161,20 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
 
   void EraseXlaMarkTensorOps() {
     auto module_op = getOperation();
-    for (auto func : module_op.getOps<func::FuncOp>()) {
-      llvm::SmallVector<Operation*> raw_ops;
-      for (Operation& op : func.getOps()) {
+    for (auto func : module_op.getOps<mlir::func::FuncOp>()) {
+      llvm::SmallVector<mlir::Operation*> raw_ops;
+      for (mlir::Operation& op : func.getOps()) {
         raw_ops.push_back(&op);
       }
 
-      for (Operation* mark_tensor : raw_ops) {
+      for (mlir::Operation* mark_tensor : raw_ops) {
         if (!IsXlaMarkTensorOp(mark_tensor)) {
           continue;
         }
-        Value original_value = mark_tensor->getOperand(0);
+        mlir::Value original_value = mark_tensor->getOperand(0);
 
-        llvm::SmallVector<std::tuple<Operation*, size_t>> uses;
-        for (OpOperand& use : mark_tensor->getResult(0).getUses()) {
+        llvm::SmallVector<std::tuple<mlir::Operation*, size_t>> uses;
+        for (mlir::OpOperand& use : mark_tensor->getResult(0).getUses()) {
           uses.push_back({use.getOwner(), use.getOperandNumber()});
         }
 
@@ -184,11 +186,12 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
     }
   }
 
-  std::unique_ptr<BoundaryMetadata> GetBoundaryMetadata(Operation* op) {
+  std::unique_ptr<BoundaryMetadata> GetBoundaryMetadata(mlir::Operation* op) {
     if (!IsXlaMarkTensorOp(op)) {
       return nullptr;
     }
-    auto backend_config = op->getAttr("backend_config").dyn_cast<StringAttr>();
+    auto backend_config =
+        op->getAttr("backend_config").dyn_cast<mlir::StringAttr>();
     if (backend_config == nullptr) {
       return nullptr;
     }
@@ -196,10 +199,10 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
   }
 
   void BuildStableHLOCompositeOp(
-      Operation* op,
-      const llvm::DenseMap<const Operation*, size_t>& op_line_num) {
-    MLIRContext* context = &getContext();
-    OpBuilder builder(context);
+      mlir::Operation* op,
+      const llvm::DenseMap<const mlir::Operation*, size_t>& op_line_num) {
+    mlir::MLIRContext* context = &getContext();
+    mlir::OpBuilder builder(context);
 
     std::unique_ptr<BoundaryMetadata> metadata = GetBoundaryMetadata(op);
     if (metadata == nullptr || metadata->is_input) {
@@ -207,12 +210,12 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
     }
     const auto& output_metadata = *metadata;
 
-    llvm::SetVector<Operation*> scope_ops_setvec;
-    llvm::SetVector<std::pair<Value, int64_t>> arg_pos_setvec;
-    llvm::SmallVector<Operation*> processing({op});
+    llvm::SetVector<mlir::Operation*> scope_ops_setvec;
+    llvm::SetVector<std::pair<mlir::Value, int64_t>> arg_pos_setvec;
+    llvm::SmallVector<mlir::Operation*> processing({op});
 
     while (!processing.empty()) {
-      Operation* curr_op = processing.back();
+      mlir::Operation* curr_op = processing.back();
       processing.pop_back();
       if (scope_ops_setvec.contains(curr_op)) {
         continue;
@@ -223,15 +226,15 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
         const auto& curr_metadata = *curr_metadata_ptr;
         if (curr_metadata.is_input &&
             curr_metadata.boundary_id() == output_metadata.boundary_id()) {
-          arg_pos_setvec.insert(
-              {curr_op->getResult(0).dyn_cast<Value>(), curr_metadata.pos});
+          arg_pos_setvec.insert({curr_op->getResult(0).dyn_cast<mlir::Value>(),
+                                 curr_metadata.pos});
           continue;
         }
       }
 
       scope_ops_setvec.insert(curr_op);
-      for (Value value : curr_op->getOperands()) {
-        Operation* def_op = value.getDefiningOp();
+      for (mlir::Value value : curr_op->getOperands()) {
+        mlir::Operation* def_op = value.getDefiningOp();
         if (def_op == nullptr) {
           // Global args
           arg_pos_setvec.insert({value, std::numeric_limits<int64_t>::max()});
@@ -259,7 +262,7 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
     std::stable_sort(
         arg_pos_pairs.begin(), arg_pos_pairs.end(),
         [](const auto& a, const auto& b) { return a.second < b.second; });
-    llvm::SmallVector<Value> args;
+    llvm::SmallVector<mlir::Value> args;
     args.reserve(arg_pos_pairs.size());
     for (auto& [arg, unused] : arg_pos_pairs) {
       args.push_back(arg);
@@ -271,50 +274,50 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
       LOG(ERROR) << "---- " << std::string(scope_op->getName().getStringRef());
     }
 
-    llvm::SmallVector<Location> arg_locs;
-    llvm::SmallVector<Type> arg_types,
+    llvm::SmallVector<mlir::Location> arg_locs;
+    llvm::SmallVector<mlir::Type> arg_types,
         result_types(op->getResultTypes().begin(), op->getResultTypes().end());
     for (auto& arg : args) {
       arg_types.push_back(arg.getType());
       arg_locs.push_back(arg.getLoc());
     }
 
-    ModuleOp module_op = getOperation();
+    mlir::ModuleOp module_op = getOperation();
 
-    auto func_type = FunctionType::get(context, arg_types, result_types);
-    auto func = builder.create<func::FuncOp>(
+    auto func_type = mlir::FunctionType::get(context, arg_types, result_types);
+    auto func = builder.create<mlir::func::FuncOp>(
         module_op.getLoc(),
         absl::StrCat(output_metadata.boundary_id(), ".impl"), func_type);
-    IRMapping mapping;
+    mlir::IRMapping mapping;
     builder.createBlock(&func.getBody(), func.begin(), arg_types, arg_locs);
     for (const auto& arg : llvm::enumerate(args)) {
       mapping.map(arg.value(), func.getArgument(arg.index()));
     }
-    for (Operation* original_op : scope_ops) {
-      Operation* cloned_op = builder.clone(*original_op, mapping);
+    for (mlir::Operation* original_op : scope_ops) {
+      mlir::Operation* cloned_op = builder.clone(*original_op, mapping);
       mapping.map(original_op, cloned_op);
     }
-    builder.create<func::ReturnOp>(func.getBody().getLoc(),
-                                   mapping.lookup(op)->getResults());
+    builder.create<mlir::func::ReturnOp>(func.getBody().getLoc(),
+                                         mapping.lookup(op)->getResults());
 
     // Adds the new function to symbol table.
-    SymbolTable symbol_table(module_op);
+    mlir::SymbolTable symbol_table(module_op);
     func.setPrivate();
     symbol_table.insert(func);
 
     // Replaces scope ops with call op to the new function
     builder.setInsertionPointAfter(op);
-    SmallVector<NamedAttribute> call_attrs;
+    llvm::SmallVector<mlir::NamedAttribute> call_attrs;
     call_attrs.push_back({
         builder.getStringAttr("call_target_name"),
         builder.getStringAttr("stablehlo.composite"),
     });
     call_attrs.push_back({builder.getStringAttr("called_computations"),
-                          builder.getArrayAttr(FlatSymbolRefAttr::get(
+                          builder.getArrayAttr(mlir::FlatSymbolRefAttr::get(
                               builder.getContext(), func.getSymName()))});
 
     // Add boundary attributes to the new function.
-    SmallVector<NamedAttribute> backend_config_attrs;
+    llvm::SmallVector<mlir::NamedAttribute> backend_config_attrs;
     for (auto& [key, j] : output_metadata.attrs) {
       switch (j.type()) {
         case json::value_t::number_integer:
@@ -338,23 +341,24 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
           break;
       }
     }
-    call_attrs.push_back({builder.getStringAttr("composite.backend_config"),
-                          builder.getDictionaryAttr(std::vector<NamedAttribute>{
-                              {builder.getStringAttr("attributes"),
-                               builder.getDictionaryAttr(backend_config_attrs)},
-                              {builder.getStringAttr("name"),
-                               builder.getStringAttr(output_metadata.name)},
-                          })});
+    call_attrs.push_back(
+        {builder.getStringAttr("composite.backend_config"),
+         builder.getDictionaryAttr(std::vector<mlir::NamedAttribute>{
+             {builder.getStringAttr("attributes"),
+              builder.getDictionaryAttr(backend_config_attrs)},
+             {builder.getStringAttr("name"),
+              builder.getStringAttr(output_metadata.name)},
+         })});
 
-    Operation* call_op = builder.create<stablehlo::CustomCallOp>(
+    mlir::Operation* call_op = builder.create<mlir::stablehlo::CustomCallOp>(
         op->getLoc(), func.getFunctionType().getResults(), args, call_attrs);
 
     // Updates all users of this op's result(s) to use the results(s) of func
     // call.
     for (size_t i = 0; i < op->getNumResults(); ++i) {
-      OpResult result = op->getResult(i);
-      OpResult new_result = call_op->getResult(i);
-      for (OpOperand& use : result.getUses()) {
+      mlir::OpResult result = op->getResult(i);
+      mlir::OpResult new_result = call_op->getResult(i);
+      for (mlir::OpOperand& use : result.getUses()) {
         use.getOwner()->setOperand(use.getOperandNumber(), new_result);
       }
     }
@@ -365,7 +369,8 @@ class PrepareTorchXLABoundariesPass : public OperationPass<ModuleOp> {
 
 }  // namespace
 
-std::unique_ptr<OperationPass<ModuleOp>> CreatePrepareTorchXLABoundariesPass() {
+std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>>
+CreatePrepareTorchXLABoundariesPass() {
   return std::make_unique<PrepareTorchXLABoundariesPass>();
 }
 
