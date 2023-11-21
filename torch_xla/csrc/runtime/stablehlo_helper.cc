@@ -74,6 +74,7 @@ static absl::Status mhloToStablehloHelper(mlir::ModuleOp* mlir_module,
   pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   pm.addPass(mlir::mhlo::createHloLegalizeToStablehloPass());
   pm.addPass(torch_xla::runtime::CreatePrepareTorchXLABoundariesPass());
+  pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   if (!mlir::succeeded(pm.run(*mlir_module))) {
     return absl::Status(
