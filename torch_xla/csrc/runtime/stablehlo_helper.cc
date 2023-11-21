@@ -9,6 +9,7 @@
 #include "stablehlo/dialect/StablehloOps.h"   // from @stablehlo
 #include "stablehlo/dialect/VhloOps.h"        // from @stablehlo
 #include "torch_xla/csrc/runtime/debug_macros.h"
+#include "torch_xla/csrc/runtime/stablehlo_composite_helper.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
 #include "torch_xla/csrc/runtime/xla_util.h"
 #include "xla/mlir_hlo/mhlo/transforms/passes.h"
@@ -72,6 +73,8 @@ static absl::Status mhloToStablehloHelper(mlir::ModuleOp* mlir_module,
   // pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   pm.addPass(mlir::mhlo::createHloLegalizeToStablehloPass());
+  pm.addPass(torch_xla::runtime::CreatePrepareTorchXLABoundariesPass());
+  pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   if (!mlir::succeeded(pm.run(*mlir_module))) {
     return absl::Status(
         absl::StatusCode::kInternal,
