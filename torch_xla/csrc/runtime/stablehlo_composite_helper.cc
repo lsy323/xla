@@ -357,7 +357,7 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
       }
     }
 
-    // The unused scope_ops can be eliminated with canonicalizer.
+    // The unused scope_ops will be eliminated with canonicalizer.
   }
 };
 
