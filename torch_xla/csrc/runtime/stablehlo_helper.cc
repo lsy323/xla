@@ -73,7 +73,9 @@ static absl::Status mhloToStablehloHelper(mlir::ModuleOp* mlir_module,
   // pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   pm.addPass(mlir::mhlo::createHloLegalizeToStablehloPass());
-  pm.addPass(torch_xla::runtime::CreatePrepareTorchXLABoundariesPass());
+  pm.addPass(torch_xla::runtime::CreateBuildStableHLOCompositePass());
+  pm.addNestedPass<mlir::func::FuncOp>(
+      torch_xla::runtime::CreateRemoveXlaMarkTensorOpsPass());
   pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   if (!mlir::succeeded(pm.run(*mlir_module))) {
