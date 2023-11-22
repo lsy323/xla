@@ -23,7 +23,7 @@ class PortTag:
   pos: int  # Arg/return position
   id: int  # Patten instance id
   is_input: bool = True  # If the tagged tensor is input/output
-  attr: str = None  # Attribute of the pattern, only output has attr field
+  attr: Dict = None  # Attribute of the pattern, only output has attr field
 
 
 class TagSerializer(json.JSONEncoder):
@@ -175,8 +175,8 @@ def get_pattern_outputs_in_order(pattern_ep: ExportedProgram):
 def insert_marker(graph: Graph, node: Node, tag: PortTag):
   with graph.inserting_after(node):
     n = graph.call_function(
-        torch.ops.xla_pattern_marking.tag_tensor,
-        args=(node, json.dumps(tag, cls=TagSerializer)),
+        torch.ops.xla_pattern_marking.mark_tensor,
+        args=(node, tag.name, tag.pos, tag.id, tag.is_input, tag.attr),
     )
     node.replace_all_uses_with(n)
     n.update_arg(0, node)
