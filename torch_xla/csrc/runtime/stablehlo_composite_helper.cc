@@ -33,9 +33,6 @@
 #include "single_include/nlohmann/json_fwd.hpp"
 #include "stablehlo/dialect/StablehloOps.h"
 
-//===----------------------------------------------------------------------===//
-// The PrepareTorchXLABoundaries Pass.
-//
 namespace torch_xla {
 namespace runtime {
 
@@ -250,7 +247,9 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
         }
       }
     }
-
+    // Sorts all ops within the boundary by their line numbers in the input
+    // MLIR. The ops will be duplicated to the impl function following this
+    // order.
     auto scope_ops = scope_ops_setvec.takeVector();
     for (auto& op : scope_ops) {
       if (!op_line_num.contains(op)) {
@@ -263,6 +262,11 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
                 return op_line_num.at(a) < op_line_num.at(b);
               });
 
+    // Sorts boundary args by their positions. Note that the args of the
+    // composite and impl function may be more than the boundary inputs, because
+    // the MLIR is lowered from the functionalized graph and additional args may
+    // be Pytorch constants. In such case the position of those args would be
+    // undetermined, while they would always come after boundary inputs.
     auto arg_pos_pairs = arg_pos_setvec.takeVector();
     std::stable_sort(
         arg_pos_pairs.begin(), arg_pos_pairs.end(),
@@ -279,6 +283,8 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
       LOG(ERROR) << "---- " << std::string(scope_op->getName().getStringRef());
     }
 
+    // Creates composite impl function and duplicates all ops within the
+    // boundary in the function.
     llvm::SmallVector<mlir::Location> arg_locs;
     llvm::SmallVector<mlir::Type> arg_types,
         result_types(op->getResultTypes().begin(), op->getResultTypes().end());
@@ -287,8 +293,6 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
       arg_locs.push_back(arg.getLoc());
     }
 
-    // Creates composite impl function and duplicates all ops within the
-    // boundary in the function.
     mlir::func::FuncOp impl_func = builder.create<mlir::func::FuncOp>(
         module_op.getLoc(),
         absl::StrCat(output_metadata.boundary_id(), ".impl"),
