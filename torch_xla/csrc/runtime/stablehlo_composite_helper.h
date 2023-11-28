@@ -1,10 +1,9 @@
 #ifndef STABLEHLO_COMPOSITE_HELPER_H_
 #define STABLEHLO_COMPOSITE_HELPER_H_
-#include <utility>
 
-#include "mlir/include/mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/include/mlir/IR/Operation.h"
-#include "mlir/include/mlir/Pass/Pass.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
 
 namespace torch_xla {
 namespace runtime {
