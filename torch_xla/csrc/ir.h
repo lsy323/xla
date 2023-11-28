@@ -168,8 +168,6 @@ class XlaNode : public torch::lazy::Node {
   torch::lazy::hash_t dag_hash_;
   torch::lazy::hash_t sharding_hash_ = 0;
 
-  std::vector<std::string> experimental_tags_;
-
   // Experimental sharding annotations attached to the IR node.
   std::vector<std::shared_ptr<xla::OpSharding>> output_shardings_;
 

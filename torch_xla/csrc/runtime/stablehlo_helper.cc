@@ -32,7 +32,7 @@ static std::string getMlirModuleStr(mlir::ModuleOp& mlir_module) {
   static bool withSrcLineInfo =
       runtime::sys_util::GetEnvBool("XLA_HLO_DEBUG", false);
   if (withSrcLineInfo) {
-    flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/false);
+    flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/true);
   }
   mlir_module.print(os, flags);
   return txt_mlir_module;
@@ -70,9 +70,9 @@ static absl::Status mhloToStablehloHelper(mlir::ModuleOp* mlir_module,
   // outputs.
   pm.addPass(mlir::mhlo::createExpandHloTuplesPass());
   // Canonicalization after tuple flatten, to remove unused tuple op.
-  // pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
-  pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
+  pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
   pm.addPass(mlir::mhlo::createHloLegalizeToStablehloPass());
+  // Group patterns into StableHLO composites.
   pm.addPass(torch_xla::runtime::CreateBuildStableHLOCompositePass());
   pm.addNestedPass<mlir::func::FuncOp>(
       torch_xla::runtime::CreateRemoveXlaMarkTensorOpsPass());

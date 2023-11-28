@@ -7,10 +7,12 @@ import torch
 import torch_xla
 from torch.library import Library, impl
 
-
 xla_pattern_marking_lib = Library("xla_pattern_marking", "DEF")
 
-xla_pattern_marking_lib.define("mark_tensor(Tensor x, str name, int pos, int id, bool is_input, Any? attr=None) -> Tensor")
+xla_pattern_marking_lib.define(
+    "mark_tensor(Tensor x, str name, int pos, int id, bool is_input, Any? attr=None) -> Tensor"
+)
+
 
 @dataclass
 class BoundaryMetadata:
@@ -20,6 +22,7 @@ class BoundaryMetadata:
   is_input: bool = True  # If the marked tensor is input/output.
   attr: dict = None  # Attribute of the pattern, expected to be attached to output.
 
+
 class BoundaryMetadataSerializer(json.JSONEncoder):
 
   def default(self, obj):
@@ -27,8 +30,14 @@ class BoundaryMetadataSerializer(json.JSONEncoder):
       return dataclasses.asdict(obj)
     return super().default(obj)
 
+
 @impl(xla_pattern_marking_lib, "mark_tensor", "XLA")
-def mark_tensor(x: torch.Tensor, name: str, pos: int, id: int, is_input: bool, attr: Dict=None):
+def mark_tensor(x: torch.Tensor,
+                name: str,
+                pos: int,
+                id: int,
+                is_input: bool,
+                attr: Dict = None):
   """Attach pattern boundary metadata to a XLA Tensor.
   
   Args:
@@ -41,15 +50,26 @@ def mark_tensor(x: torch.Tensor, name: str, pos: int, id: int, is_input: bool, a
                    in the stablehlo composite.
   """
   pattern_info = BoundaryMetadata(name, pos, id, is_input, attr)
-  return torch_xla._XLAC._xla_add_tag(x, json.dumps(pattern_info, cls=BoundaryMetadataSerializer))
+  return torch_xla._XLAC._xla_mark_tensor(
+      x, json.dumps(pattern_info, cls=BoundaryMetadataSerializer))
 
 
 @impl(xla_pattern_marking_lib, "mark_tensor", "CompositeExplicitAutograd")
-def mark_tensor(x: torch.Tensor, name: str, pos: int, id: int, is_input: bool, attr: Dict=None):
+def mark_tensor(x: torch.Tensor,
+                name: str,
+                pos: int,
+                id: int,
+                is_input: bool,
+                attr: Dict = None):
   # Do nothing for non-xla tensor.
   return x
 
 
 @impl(xla_pattern_marking_lib, "mark_tensor", "Meta")
-def mark_tensor(x: torch.Tensor, name: str, pos: int, id: int, is_input: bool, attr: Dict=None):
+def mark_tensor(x: torch.Tensor,
+                name: str,
+                pos: int,
+                id: int,
+                is_input: bool,
+                attr: Dict = None):
   return torch.empty_like(x)

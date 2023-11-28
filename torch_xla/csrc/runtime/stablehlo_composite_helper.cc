@@ -156,9 +156,8 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
                builder.getF32FloatAttr(j.template get<float>())});
           break;
         case json::value_t::boolean:
-          named_attrs.push_back(
-              {builder.getStringAttr(key),
-               builder.getBoolAttr(j.template get<bool>())});
+          named_attrs.push_back({builder.getStringAttr(key),
+                                 builder.getBoolAttr(j.template get<bool>())});
           break;
         case json::value_t::string:
           named_attrs.push_back(

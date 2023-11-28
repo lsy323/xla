@@ -7,8 +7,7 @@ namespace torch_xla {
 
 class MarkTensor : public XlaNode {
  public:
-  MarkTensor(const torch::lazy::Value& input,
-             const std::string& info);
+  MarkTensor(const torch::lazy::Value& input, const std::string& info);
 
   std::string ToString() const override;
 

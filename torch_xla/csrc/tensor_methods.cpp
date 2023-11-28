@@ -1578,8 +1578,8 @@ XLATensorPtr lt(const XLATensorPtr& input, const XLATensorPtr& other) {
 }
 
 XLATensorPtr mark_tensor(const XLATensorPtr& input, const std::string& info) {
-  torch::lazy::NodePtr node = torch::lazy::MakeNode<MarkTensor>(
-      input->GetIrValue(), info);
+  torch::lazy::NodePtr node =
+      torch::lazy::MakeNode<MarkTensor>(input->GetIrValue(), info);
   return input->CreateFrom(torch::lazy::Value(node));
 }
 

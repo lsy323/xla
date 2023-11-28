@@ -1378,20 +1378,6 @@ void InitXlaModuleBindings(py::module m) {
           }
           return retlist;
         });
-    m.def("_get_hlo",
-        [](const std::vector<at::Tensor>& tensors, const std::string& device,
-           const std::vector<std::string>& devices) -> std::string {
-          NoGilSection nogil;
-          std::vector<XLATensorPtr> xtensors;
-          if (tensors.empty()) {
-            torch::lazy::BackendDevice backend_device =
-                GetDeviceOrCurrent(device);
-            xtensors = XLAGraphExecutor::Get()->GetLiveTensors(&backend_device);
-          } else {
-            xtensors = GetXlaTensors(tensors, /*want_all=*/false);
-          }
-          return XLAGraphExecutor::Get()->DumpHloComputation(xtensors, EmitMode::kHloReadable);
-        });
   m.def("_xla_wait_device_ops",
         [](const std::vector<std::string>& devices) {
           NoGilSection nogil;
@@ -1971,9 +1957,9 @@ void InitXlaModuleBindings(py::module m) {
           }
           return handles;
         });
-  m.def("_xla_add_tag",
+  m.def("_xla_mark_tensor",
         [](const at::Tensor& input, const std::string& info) {
-          TORCH_LAZY_COUNTER("XlaAddTag", 1);
+          TORCH_LAZY_COUNTER("XlaMarkTensor", 1);
           at::Tensor result;
           {
             NoGilSection nogil;
