@@ -22,7 +22,6 @@ torch::lazy::NodePtr MarkTensor::Clone(torch::lazy::OpList operands) const {
 }
 
 XlaOpVector MarkTensor::Lower(LoweringContext* loctx) const {
-    std::cout << "in marktensor lower" << std::endl;
   xla::XlaOp input = loctx->GetOutputOp(operand(0));
   xla::Shape input_shape = ShapeHelper::ShapeOfXlaOp(input);
   // TODO(lsy323): Lower to HLO directly once qdtype is added to HLO.
