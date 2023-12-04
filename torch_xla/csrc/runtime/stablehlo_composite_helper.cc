@@ -267,6 +267,14 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
           arg_pos_setvec.insert({curr_op->getResult(0).dyn_cast<mlir::Value>(),
                                  curr_metadata->pos});
           continue;
+        } else if (curr_metadata->boundary_key() != metadata.boundary_key()) {
+          // Terminal condition: meet another boundary during the graph
+          // traversal.
+          return boundary_output_op->emitError()
+                 << "failed to build composite: running into metadata "
+                    "belongs to another boundary while building the composite. "
+                    "This is usually due to boundaries are overlapped or the "
+                    "same marked tensor is used for nested composites.";
         }
       }
 
@@ -275,7 +283,11 @@ class BuildStableHLOCompositePass : public mlir::OperationPass<mlir::ModuleOp> {
         mlir::Operation* def_op = value.getDefiningOp();
         if (def_op == nullptr) {
           // Terminal condition: global function arg
-          arg_pos_setvec.insert({value, std::numeric_limits<int64_t>::max()});
+          // arg_pos_setvec.insert({value,
+          // std::numeric_limits<int64_t>::max()});
+          return boundary_output_op->emitError()
+                 << "failed to build composite: unmarked composite input "
+                    "found.";
         } else if (llvm::isa<mlir::stablehlo::ConstantOp>(def_op)) {
           // Terminal condition: constant
           impl_ops_setvec.insert(def_op);

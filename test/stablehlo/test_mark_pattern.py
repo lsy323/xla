@@ -127,6 +127,18 @@ class XlaMarkPatternTest(unittest.TestCase):
     stablehlo = self.run_func_get_stablehlo(f, input_args)
     self.assertEqual(stablehlo.count("@stablehlo.composite"), 1)
     self.assertTrue('{attributes = {}, name = "p"}' in stablehlo)
+  
+  def test_input_not_marked(self):
+    def f(x, y):
+      x = torch.ops.xla_pattern_marking.mark_tensor(x, "p", 0, "0", True)
+      out = x + y
+      out = out * x * y
+      out = torch.ops.xla_pattern_marking.mark_tensor(out, "p", 0, "0", False)
+      return out
+
+    input_args = (torch.ones(5), torch.ones(5))
+    with self.assertRaises(Exception):
+      stablehlo = self.run_func_get_stablehlo(f, input_args)
 
   @unittest.skip("Multiple outputs patterns are not supported now.")
   def test_multiple_output(self):
