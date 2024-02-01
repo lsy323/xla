@@ -552,6 +552,8 @@ xla::XlaOp CreateIndex(xla::XlaOp input, xla::XlaOp indices,
                        int64_t start_dim) {
   const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
   const xla::Shape& indices_shape = ShapeHelper::ShapeOfXlaOp(indices);
+  std::cout << "check indices shape " << indices_shape << std::endl;
+  std::cout << "check indices shape rank " << indices_shape.rank() << std::endl;
   XLA_CHECK_GE(indices_shape.rank(), 1);
   int64_t num_index_dims = indices_shape.dimensions(indices_shape.rank() - 1);
   xla::GatherDimensionNumbers dim_numbers;
@@ -575,6 +577,8 @@ xla::XlaOp CreateIndex(xla::XlaOp input, xla::XlaOp indices,
   for (int64_t i = 0; i < num_index_dims; i++) {
     dim_numbers.add_start_index_map(i + start_dim);
   }
+  std::cout << "check dim_numbers " << dim_numbers.DebugString() << std::endl;
+  std::cout << "check slice_sizes " << slice_sizes << std::endl;
   return xla::Gather(input, indices, dim_numbers, slice_sizes);
 }
 
