@@ -163,7 +163,24 @@ class ExportFxPassTest(unittest.TestCase):
     self.assertFalse('aten.native_layer_norm' in ep.graph_module.code)
     after_decomp_out_2 = ep.module()(*args)
     self.assertTrue(torch.allclose(before_decomp_out, after_decomp_out_2, atol=1e-6))
-    
+
+  def test_unsqueeze_to_view(self):
+    class M(torch.nn.Module):
+
+      def forward(self, x):
+        return torch.ops.aten.unsqueeze.default(x, 2)
+
+    args = (torch.rand((1, 1, 3, 256)),)
+    dynamic_shapes = ({2: Dim("dim")},)
+    m = M().eval()
+    ep = export(m, args, dynamic_shapes=dynamic_shapes)
+    out1 = ep.module()(*args)
+    unsqueeze_to_view(ep.graph_module)
+    ep.graph_module.recompile()
+    self.assertFalse('aten.unsqueeze' in ep.graph_module.code)
+    self.assertTrue('aten.view' in ep.graph_module.code)
+    out2 = ep.module()(*args)
+    self.assertTrue(torch.allclose(out1, out2))
 
 if __name__ == "__main__":
   test = unittest.main()

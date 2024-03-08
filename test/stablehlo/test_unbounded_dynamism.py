@@ -456,7 +456,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
-  @unittest.skip("Unbounded dynamism not supported on unsqueeze.")
   def test_unsqueeze(self):
     args = (torch.rand((1, 1, 3, 256)),)
     dynamic_shapes = ([{2: Dim("dim")}],)
@@ -466,10 +465,10 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
     print(shlo_text)
-    # self.assertTrue(
-    #     re.search(
-    #         r"%arg.: tensor<\?x197x12x64xf32>.*->.*tensor<\?x12x197x64xf32>",
-    #         shlo_text) is not None)
+    self.assertTrue(
+        re.search(
+            r"%arg.: tensor<1x1x\?x256xf32>.*->.*tensor<1x1x1x\?x256xf32>",
+            shlo_text) is not None)
     if has_tf_package():
       with tempfile.TemporaryDirectory() as tempdir:
         save_torch_module_as_tf_saved_model(

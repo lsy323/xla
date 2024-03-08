@@ -106,7 +106,10 @@ def replace_dynamic_expand_with_xla_op(gm: GraphModule):
 def replace_dynamic_view_with_xla_op(gm: GraphModule):
   g = gm.graph
   ATEN_VIEW_OPS = [
-      torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default
+      torch.ops.aten.view,
+      torch.ops.aten.view.default,
+      torch.ops.aten._unsafe_view,
+      torch.ops.aten._unsafe_view.default,
   ]
   for n in g.nodes:
     if n.target in ATEN_VIEW_OPS:
@@ -155,6 +158,28 @@ def replace_dynamic_view_with_xla_op(gm: GraphModule):
         if len(list(sym_size_node.users)) == 0:
           g.erase_node(sym_size_node)
 
+def unsqueeze_to_view(gm: GraphModule):
+  graph = gm.graph
+  for n in graph.nodes:
+    if n.op == "call_function" and n.target == torch.ops.aten.unsqueeze.default:
+      unsqueeze_src = n.args[0]
+      src_shape = unsqueeze_src.meta['val'].shape
+      symbolic_dims = [
+          i for i, x in enumerate(src_shape) if not isinstance(x, int)
+      ]
+      if len(symbolic_dims) == 0:
+        continue
+      view_args = list(src_shape)
+      with graph.inserting_before(n):
+        for dim in symbolic_dims:
+          get_size_node = graph.call_function(aten.sym_size.int, (unsqueeze_src, dim))
+          view_args[dim] = get_size_node
+        squeezed_dim = n.args[1]
+        view_args = (unsqueeze_src, view_args[:squeezed_dim] + [1] + view_args[squeezed_dim:])
+        view_node = graph.call_function(aten.view, view_args)
+        n.replace_all_uses_with(view_node)
+        graph.erase_node(n)
+
 
 def exported_program_has_symbolic_input_shape(ep):
   for n in ep.graph_module.graph.nodes:
@@ -174,6 +199,7 @@ def process_exported_program_with_symbolic_input(ep):
       decompose_dynamic_shape_select,
       remove_no_op_slice,
       decompose_dynamic_native_layer_norm,
+      unsqueeze_to_view,
       replace_dynamic_expand_with_xla_op,
       replace_dynamic_view_with_xla_op,
   ]
