@@ -417,8 +417,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
-  @unittest.skip("Only the BS of the logits can be unbounded dynamic.")
-  def test_softmax_on_dynamic_dim(self):
+  def test_softmax_reduce_on_dynamic_dim(self):
     args = (torch.rand((1, 8, 128, 3)), -1, False)
     dynamic_shapes = ([{3: Dim("dim")}, None, None],)
     m = wrap_func_as_nn_module(torch.ops.aten._softmax.default)
@@ -426,10 +425,10 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
     print(shlo_text)
-    # self.assertTrue(
-    #     re.search(
-    #         r"%arg.: tensor<\?x12x197x197xf32>.*->.*tensor<\?x12x197x197xf32>",
-    #         shlo_text) is not None)
+    self.assertTrue(
+        re.search(
+            r"%arg.: tensor<1x8x128x\?xf32>.*->.*tensor<1x8x128x\?xf32>",
+            shlo_text) is not None)
     if has_tf_package():
       with tempfile.TemporaryDirectory() as tempdir:
         save_torch_module_as_tf_saved_model(
