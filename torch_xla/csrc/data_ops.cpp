@@ -216,10 +216,48 @@ xla::XlaOp BuildStack(absl::Span<const xla::XlaOp> inputs, int64_t dim) {
   XLA_CHECK_GT(inputs.size(), 0);
   std::vector<xla::XlaOp> reshaped_inputs;
   for (size_t i = 0; i < inputs.size(); ++i) {
-    auto input_size = XlaHelpers::SizesOfXlaOp(inputs[i]);
-    input_size.insert(input_size.begin() + dim, 1);
-    reshaped_inputs.push_back(
-        XlaHelpers::DynamicReshape(inputs[i], input_size));
+    const xla::XlaOp& input = inputs[i];
+    const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(inputs[i]);
+    const std::vector<int64_t> input_sizes = XlaHelpers::SizesOfXlaOp(inputs[i]);
+    std::vector<int64_t> output_sizes = input_sizes;
+    output_sizes.insert(output_sizes.begin() + dim, 1);
+    if (input_shape.is_unbounded_dynamic()) {
+      // Dim idx map between new shape and old shape.
+      std::vector<int32_t> dim_mapping(output_sizes.size());
+      std::iota(dim_mapping.begin(), dim_mapping.begin() + dim, 0);
+      if (dim + 1 < output_sizes.size()) {
+        std::iota(dim_mapping.begin() + dim + 1, dim_mapping.end(), dim);
+      }
+      dim_mapping[dim] = -1;
+      std::vector<bool> output_dynamic(output_sizes.size(), false);
+      std::vector<xla::XlaOp> get_dim_ops;
+      for (size_t d = 0; d < output_sizes.size(); ++d) {
+        if (dim_mapping.at(d) != -1 && input_shape.is_unbounded_dynamic_dimension(dim_mapping.at(d))) {
+          output_sizes[d] = xla::Shape::kUnboundedSize;
+          output_dynamic[d] = true;
+          get_dim_ops.push_back(
+            xla::Reshape(xla::GetDimensionSize(input, dim_mapping.at(d)), {1}));
+        } else {
+          get_dim_ops.push_back(
+            xla::ConstantR1(input.builder(),
+              absl::Span<const int32_t>({static_cast<int32_t>(output_sizes.at(d))}))
+          );
+        }
+      }
+      xla::XlaOp concat_op = xla::ConcatInDim(input.builder(), get_dim_ops, {0});
+      xla::Shape new_shape = xla::ShapeUtil::MakeShape(input_shape.element_type(),
+                                output_sizes,
+                                output_dynamic);
+      std::cout << "check output sizes " << new_shape << std::endl;
+      reshaped_inputs.push_back(
+          xla::CustomCall(
+            input.builder(), "mhlo.dynamic_reshape", {input, concat_op},
+            new_shape)
+      );
+    } else {
+      reshaped_inputs.push_back(
+          XlaHelpers::DynamicReshape(input, output_sizes));
+    }
   }
   return xla::ConcatInDim(inputs[0].builder(), reshaped_inputs, dim);
 }

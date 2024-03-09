@@ -435,6 +435,25 @@ class UnboundedDynamismExportTest(unittest.TestCase):
             m, args, tempdir, dynamic_shapes=dynamic_shapes)
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
+    
+  def test_index(self):
+    args = (torch.rand((2, 10)), torch.arange(5))
+    dynamic_shapes = ([None, {0: Dim("dim")}],)
+    m = wrap_func_as_nn_module(lambda x, y: torch.ops.aten.index.Tensor(x, [None, y]))
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    print(shlo_text)
+    self.assertTrue(
+        re.search(
+            r"%arg.: tensor<\?xi64>.*%arg.: tensor<2x10xf32>.*->.*tensor<2x\?xf32>",
+            shlo_text) is not None)
+    if has_tf_package():
+      with tempfile.TemporaryDirectory() as tempdir:
+        save_torch_module_as_tf_saved_model(
+            m, args, tempdir, dynamic_shapes=dynamic_shapes)
+        self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+        compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
   def test_transpose_on_dynamic_dim(self):
     args = (torch.rand((1, 8, 3, 256)),)

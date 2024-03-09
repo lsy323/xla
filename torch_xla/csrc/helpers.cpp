@@ -387,8 +387,6 @@ xla::XlaOp XlaHelpers::DynamicUnboundedReshape(
       aux_input.builder(), "mhlo.dynamic_reshape", {input, concat_op},
       xla::ShapeUtil::MakeShape(aux_input_shape.element_type(), output_sizes,
                                 output_dynamic));
-
-  return input;
 }
 
 bool XlaHelpers::SameStaticDimensions(const xla::Shape& shape1,

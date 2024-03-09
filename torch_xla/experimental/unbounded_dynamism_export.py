@@ -76,8 +76,7 @@ def remove_no_op_slice(gm: GraphModule):
       if _is_no_op_slice(n):
         slice_src_node = n.args[0]
         n.replace_all_uses_with(slice_src_node)
-      graph.erase_node(n)
-  return graph
+        graph.erase_node(n)
 
 
 def replace_dynamic_expand_with_xla_op(gm: GraphModule):
@@ -90,7 +89,7 @@ def replace_dynamic_expand_with_xla_op(gm: GraphModule):
         if not isinstance(node, int):
           sym_sizes.append((dim, node))
       if len(sym_sizes) == 0:
-        return g
+        continue
       assert len(sym_sizes) == 1
 
       new_args = list(n.args)
