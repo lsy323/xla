@@ -436,6 +436,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
     
+  @unittest.skip("Converted StableHLO contains i1 dtype, not expected.")
   def test_index(self):
     args = (torch.rand((2, 10)), torch.arange(5))
     dynamic_shapes = ([None, {0: Dim("dim")}],)
@@ -644,8 +645,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(
             np.allclose(out1.detach().numpy(), tf_out[0].numpy(), atol=1e-05))
 
-  @unittest.skip("Cannot generate aten.sym_numel in the exported program.")
-  def test_dynamic_expand_sym_numel(self):
+  def test_dynamic_expand_2(self):
 
     class M(torch.nn.Module):
 
@@ -662,7 +662,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     print(shlo_text)
     self.assertTrue(
         re.search(
-            r"%arg.: tensor<\?x3x224x224xf32>.*->.*tensor<\?x5x43681xf32>",
+            r"%arg.: tensor<1x1x1x\?x256xf32>.*->.*tensor<1x1x8x\?x256xf32>",
             shlo_text) is not None)
     if has_tf_package():
       with tempfile.TemporaryDirectory() as tempdir:

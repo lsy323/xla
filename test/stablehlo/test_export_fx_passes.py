@@ -141,6 +141,26 @@ class ExportFxPassTest(unittest.TestCase):
     out2 = ep.module()(*args)
     self.assertTrue(torch.allclose(out1, out2))
 
+  def test_dynamic_expand_2(self):
+
+    class M(torch.nn.Module):
+
+      def forward(self, x, range):
+        return x.expand(1, 1, 8, range.shape[0], 256)
+
+    m = M()
+    args = (torch.rand((1, 1, 1, 3, 256)), torch.arange(3))
+    dynamic_shapes = ({3: Dim("bs")},{0: Dim("bs")})
+    ep = export(m, args, dynamic_shapes=dynamic_shapes)
+    out1 = ep.module()(*args)
+    print(ep)
+    replace_dynamic_expand_with_xla_op(ep.graph_module)
+    print(ep)
+    ep.graph_module.recompile()
+    self.assertTrue('xla.dynamic_expand' in ep.graph_module.code)
+    out2 = ep.module()(*args)
+    self.assertTrue(torch.allclose(out1, out2))
+
   def test_layer_norm_decomp(self):
     class M(torch.nn.Module):
 

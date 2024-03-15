@@ -54,19 +54,28 @@ XlaOpVector DynamicExpand::Lower(LoweringContext* loctx) const {
   xla::XlaOp input = loctx->GetOutputOp(operand(0));
   xla::XlaOp src_tensor = loctx->GetOutputOp(operand(1));
 
-  xla::XlaOp dynamic_dim_tensor =
-      xla::Reshape(xla::GetDimensionSize(src_tensor, src_index_), {1});
-
-  // Only support the source index and target index are both 0
-  std::vector<int32_t> static_input_dims_vec(size_.begin() + 1, size_.end());
-  xla::XlaOp static_input_dims = xla::ConstantR1(
-      loctx->builder(), absl::Span<const int32_t>(static_input_dims_vec));
+  std::vector<xla::XlaOp> dynamic_dim_tensor;
+  xla::Shape input_shape = ShapeHelper::ShapeOfXlaOp(input);
+  for (size_t i = 0; i < input_shape.rank(); ++i) {
+    if (i == target_index_) {
+      dynamic_dim_tensor.push_back(
+        xla::Reshape(xla::GetDimensionSize(src_tensor, src_index_), {1}));
+    } else {
+      dynamic_dim_tensor.push_back(xla::ConstantR1(loctx->builder(),
+                      absl::Span<const int32_t>({static_cast<int32_t>(size_.at(i))})));
+    }
+  }
   xla::XlaOp final_broadcast_dimensions = xla::ConcatInDim(
-      loctx->builder(), {dynamic_dim_tensor, static_input_dims}, 0);
+    loctx->builder(), dynamic_dim_tensor, 0);
 
   // Output shape
-  xla::Shape final_shape = ShapeHelper::ShapeOfXlaOp(input);
-  final_shape.set_unbounded_dynamic_dimension(target_index_);
+  std::vector<int64_t> output_sizes(size_.begin(), size_.end());
+  output_sizes[target_index_] = xla::Shape::kUnboundedSize;
+  std::vector<bool> output_dynamic(size_.size(), false);
+  output_dynamic[target_index_] = true;
+  xla::Shape final_shape = xla::ShapeUtil::MakeShape(input_shape.element_type(),
+                                output_sizes,
+                                output_dynamic);
   xla::XlaOp result = XlaHelpers::DynamicBroadcastInDim(
       input, final_shape, final_broadcast_dimensions);
   return ReturnOp(result, loctx);
