@@ -194,6 +194,37 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
+  def test_conv1d(self):
+    args = (
+        torch.rand((3, 1, 800)),
+        torch.rand((512, 1, 10)),
+    )
+    dynamic_shapes = ([{0: Dim("dim")}, None],)
+    m = wrap_func_as_nn_module(
+        lambda x, y: torch.ops.aten.convolution.default(
+            x,
+            y,
+            None,
+            [5],
+            [0],
+            [1],
+            False,
+            [0],
+            1,
+        ))
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    self.assertTrue(
+        re.search(r'tensor<\?x3x224x224xf32>.*->.*tensor<\?x5x14x14xf32>',
+                  shlo_text) is not None)
+    if has_tf_package():
+      with tempfile.TemporaryDirectory() as tempdir:
+        save_torch_module_as_tf_saved_model(
+            m, args, tempdir, dynamic_shapes=dynamic_shapes)
+        self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+        compare_exported_program_and_saved_model_result(ep, tempdir, args)
+
   def test_div(self):
     args = (torch.rand((10, 12, 197)), 8.0)
     dynamic_shapes = ([{0: Dim("dim")}, None],)
@@ -279,23 +310,25 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
-  @unittest.skip("implicit broadcasting doesn't work for sub.")
   def test_sub(self):
-    class M(torch.nn.Module):
-
-      def forward(self, x, y):
-        return x - y
-
     args = (
         torch.rand((10, 4, 6)),
         torch.rand((10, 4, 1)),
     )
-    dynamic_shapes = ({0: Dim("dim")}, {0: Dim("dim")})
-    m = M()
+    dynamic_shapes = ([{0: Dim("dim")}, {0: Dim("dim")}],)
+    m = wrap_func_as_nn_module(torch.ops.aten.sub.Tensor)
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
+    self.assertTrue(
+        re.search(r"%arg.: tensor<\?x4x1xf32>.*%arg.: tensor<\?x4x6xf32>.*->.*tensor<\?x4x6xf32>",
+                  shlo_text) is not None)
+    if has_tf_package():
+      with tempfile.TemporaryDirectory() as tempdir:
+        save_torch_module_as_tf_saved_model(
+            m, args, tempdir, dynamic_shapes=dynamic_shapes)
+        self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+        compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
   def test_mul_scalar(self):
     class M(torch.nn.Module):
@@ -310,6 +343,61 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     shlo_text = shlo_module.get_stablehlo_text()
     self.assertTrue(
         re.search(r"%arg.: tensor<1x8x256x\?xf32>.*->.*tensor<1x8x256x\?xf32>",
+                  shlo_text) is not None)
+    if has_tf_package():
+      with tempfile.TemporaryDirectory() as tempdir:
+        save_torch_module_as_tf_saved_model(
+            m, args, tempdir, dynamic_shapes=dynamic_shapes)
+        self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+        compare_exported_program_and_saved_model_result(ep, tempdir, args)
+  
+  def test_mul_tensor(self):
+    args = (torch.rand((3, 10)),torch.rand((3, 10)))
+    dynamic_shapes = ([{0: Dim("dim")}, {0: Dim("dim")}],)
+    m = wrap_func_as_nn_module(torch.ops.aten.mul.Tensor)
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    print(shlo_text)
+    self.assertTrue(
+        re.search(r"%arg.: tensor<\?x10xf32>.*->.*tensor<\?x10xf32>",
+                  shlo_text) is not None)
+    if has_tf_package():
+      with tempfile.TemporaryDirectory() as tempdir:
+        save_torch_module_as_tf_saved_model(
+            m, args, tempdir, dynamic_shapes=dynamic_shapes)
+        self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+        compare_exported_program_and_saved_model_result(ep, tempdir, args)
+
+  def test_native_group_norm(self):
+    # class M(torch.nn.Module):
+
+    #   def forward(self, x, weight, bias, N, C, HxW, group, eps):
+    #     return torch.ops.aten.native_group_norm.default(x, weight, bias, N, C, HxW, group, eps)[0]
+
+    class M2(torch.nn.Module):
+      def __init__(self):
+        super().__init__()
+        # self.conv = torch.nn.Conv1d(1, 512, 10, stride=5)
+        self.layer_norm = torch.nn.GroupNorm(num_groups=512, num_channels=512, affine=True)
+        # self.layer_norm = torch.nn.LayerNorm(159, eps=1e-12)
+
+      def forward(self, x):
+        x = self.layer_norm(x)
+        return x
+
+    args = (
+        torch.rand((10, 512, 159)),
+    )
+    dynamic_shapes = ({0: Dim("dim")},)
+    m = M2()
+    out1 = m(*args)
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    print(shlo_text)
+    self.assertTrue(
+        re.search(r"%arg.: tensor<\?x512x159xf32>.*->.*tensor<\?x512x159xf32>",
                   shlo_text) is not None)
     if has_tf_package():
       with tempfile.TemporaryDirectory() as tempdir:
@@ -475,7 +563,27 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
-  def test_unsqueeze(self):
+  def test_unsqueeze_1(self):
+    args = (torch.rand((3, 10)),)
+    dynamic_shapes = ([{0: Dim("dim")}],)
+    m = wrap_func_as_nn_module(
+        lambda x: torch.ops.aten.unsqueeze.default(x, 1))
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    print(shlo_text)
+    self.assertTrue(
+        re.search(
+            r"%arg.: tensor<\?x10xf32>.*->.*tensor<\?x1x10xf32>",
+            shlo_text) is not None)
+    if has_tf_package():
+      with tempfile.TemporaryDirectory() as tempdir:
+        save_torch_module_as_tf_saved_model(
+            m, args, tempdir, dynamic_shapes=dynamic_shapes)
+        self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+        compare_exported_program_and_saved_model_result(ep, tempdir, args)
+
+  def test_unsqueeze_2(self):
     args = (torch.rand((1, 1, 3, 256)),)
     dynamic_shapes = ([{2: Dim("dim")}],)
     m = wrap_func_as_nn_module(
@@ -483,7 +591,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(
             r"%arg.: tensor<1x1x\?x256xf32>.*->.*tensor<1x1x1x\?x256xf32>",

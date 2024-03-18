@@ -184,6 +184,43 @@ class ExportFxPassTest(unittest.TestCase):
     after_decomp_out_2 = ep.module()(*args)
     self.assertTrue(torch.allclose(before_decomp_out, after_decomp_out_2, atol=1e-6))
 
+  def test_group_norm_to_layer_norm(self):
+    class M(torch.nn.Module):
+
+      def forward(self, x, weight, bias, N, C, HxW, group, eps):
+        return torch.ops.aten.native_group_norm.default(x, weight, bias, N, C, HxW, group, eps)[0]
+    
+    class M2(torch.nn.Module):
+      def __init__(self):
+        super().__init__()
+        # self.conv = torch.nn.Conv1d(1, 512, 10, stride=5)
+        self.layer_norm = torch.nn.GroupNorm(num_groups=512, num_channels=512, affine=True)
+
+      def forward(self, x):
+        return self.layer_norm(x)[0]
+
+    args = (torch.rand(10, 512, 159), torch.rand(512), torch.rand(512), 10, 512, 159, 512, 1e-12)
+    export_args = (torch.rand(10, 512, 159),)
+    dynamic_shapes = (
+        {
+          0: Dim("bs")
+        },
+    )
+    m = M().eval()
+    before_decomp_out = m(*args)
+    after_decomp_out = native_group_norm_impl(*args)
+    self.assertTrue(torch.allclose(before_decomp_out, after_decomp_out, atol=1e-6))
+    # Test export path with a different to workaround an export issue.
+    m2 = M2().eval()
+    ep = export(m2, export_args, dynamic_shapes=dynamic_shapes)
+    before_decomp_ep_out = m2(*export_args)
+    decompose_dynamic_native_group_norm(ep.graph_module)
+    ep.graph_module.recompile()
+    self.assertFalse('aten.native_group_norm' in ep.graph_module.code)
+    after_decomp_ep_out = ep.module()(*export_args)
+    # print(before_decomp_ep_out - after_decomp_ep_out)
+    self.assertTrue(torch.allclose(before_decomp_ep_out, after_decomp_ep_out, atol=1e-6))
+
   def test_unsqueeze_to_view(self):
     class M(torch.nn.Module):
 

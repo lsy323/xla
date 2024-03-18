@@ -11,11 +11,18 @@ def wrap_func_as_nn_module(f):
   return M()
 
 def native_layer_norm_impl(input, normalized_shape, weight, bias, eps):
-  input_shape = input.shape
-  # assert len(normalized_shape) == 1 and normalized_shape[0] == input_shape[-1]
   mean = torch.mean(input, -1, keepdim=True)
   rstd = torch.rsqrt(torch.var(input, -1, keepdim=True, correction=0) + eps)
   out = ((input + mean * -1) * rstd) # sub doesn't support unbounded dynamism
+  out = out * weight + bias
+  return out
+
+def native_group_norm_impl(input, weight, bias, N, C, HxW, group, eps):
+  mean = torch.mean(input, -1, keepdim=True)
+  rstd = torch.rsqrt(torch.var(input, -1, keepdim=True, correction=0) + eps)
+  out = ((input + mean * -1) * rstd) # sub doesn't support unbounded dynamism
+  weight = weight.unsqueeze(1)
+  bias = bias.unsqueeze(1)
   out = out * weight + bias
   return out
 
@@ -23,13 +30,30 @@ def native_layer_norm_pattern(x, dim, weight, bias, eps):
   # Subgraph rewritter doesn't work for pattern with multiple returns.
   return torch.ops.aten.native_layer_norm.default(x, dim, weight, bias, eps)[0]
 
+def native_group_norm_pattern(x, weight, bias, N, C, HxW, group, eps):
+  # Subgraph rewritter doesn't work for pattern with multiple returns.
+  return torch.ops.aten.native_group_norm.default(x, weight, bias, N, C, HxW, group, eps)[0]
+
 def decompose_dynamic_native_layer_norm(gm):
+  # TODO: Check all native layernorm consumers only take ouptut[0] from the layer_norm.
   replaced_patterns = subgraph_rewriter.replace_pattern_with_filters(gm, native_layer_norm_pattern, native_layer_norm_impl, ignore_literals=False)
   # Only support normalize along the last dim now.
   for matches in replaced_patterns:
     for pattern_n, match_n in matches.nodes_map.items():
       if isinstance(match_n, list):
         assert len(match_n) == 1
+
+# def group_norm_to_layer_norm(gm):
+#   # TODO: Check all native layernorm consumers only take ouptut[0] from the layer_norm.
+#   replaced_patterns = subgraph_rewriter.replace_pattern_with_filters(gm, native_group_norm_pattern, native_layer_norm_impl, ignore_literals=False)
+#   graph = gm.graph
+#   for n in graph.nodes:
+#     if n.op == "call_function" and n.target == torch.ops.aten.native_group_norm.default:
+#       n.target = torch.ops.aten.native_layer_norm.default
+#       n.args = (n.args[0], [n.args[5]], n.args[1], n.args[2], n.args[7])
+def decompose_dynamic_native_group_norm(gm):
+  # TODO: Check all native layernorm consumers only take ouptut[0] from the layer_norm.
+  replaced_patterns = subgraph_rewriter.replace_pattern_with_filters(gm, native_group_norm_pattern, native_group_norm_impl, ignore_literals=False)
 
 def decompose_dynamic_shape_select(gm: GraphModule):
   graph = gm.graph
@@ -73,6 +97,7 @@ def remove_no_op_slice(gm: GraphModule):
   graph = gm.graph
   for n in graph.nodes:
     if n.op == "call_function" and n.target == aten.slice.Tensor:
+      import pdb;pdb.set_trace()
       if _is_no_op_slice(n):
         slice_src_node = n.args[0]
         n.replace_all_uses_with(slice_src_node)
@@ -197,6 +222,7 @@ def process_exported_program_with_symbolic_input(ep):
   passes = [
       decompose_dynamic_shape_select,
       remove_no_op_slice,
+      decompose_dynamic_native_group_norm,
       decompose_dynamic_native_layer_norm,
       unsqueeze_to_view,
       replace_dynamic_expand_with_xla_op,

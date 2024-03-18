@@ -300,7 +300,7 @@ def _exported_program_to_stablehlo_bundle(exported_model,
   exported_model = exported_model.run_decompositions(_extra_decompositions)
   if exported_program_has_symbolic_input_shape(exported_model):
     process_exported_program_with_symbolic_input(exported_model)
-  print(exported_model)
+  print("after passes: ", exported_model)
   args, kwargs = exported_model.example_inputs
 
   assert len(kwargs) == 0, "Export to stablehlo doesnt support kwargs yet."
@@ -359,7 +359,7 @@ def _exported_program_to_stablehlo_bundle(exported_model,
   stablehlo_content = xm.get_stablehlo_bytecode(res)
   if options.include_human_readable_text:
     stablehlo_text = xm.get_stablehlo(res)
-    # stablehlo_text = torch_xla._XLAC._get_xla_tensors_hlo(res)
+    stablehlo_text = torch_xla._XLAC._get_xla_tensors_hlo(res)
   else:
     stablehlo_text = None
 
