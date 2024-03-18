@@ -16,7 +16,7 @@ try:
       save_torch_module_as_tf_saved_model
 except ImportError:
   print("tf is not installed. The tf.saved_model tests will be skipped.")
-from .utils import (compare_exported_program_and_saved_model_result,
+from utils import (compare_exported_program_and_saved_model_result,
                    has_tf_package, load_save_model_and_inference,
                    wrap_func_as_nn_module)
 
@@ -200,6 +200,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         torch.rand((512, 1, 10)),
     )
     dynamic_shapes = ([{0: Dim("dim")}, None],)
+    # dynamic_shapes = None
     m = wrap_func_as_nn_module(
         lambda x, y: torch.ops.aten.convolution.default(
             x,
@@ -216,7 +217,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
     self.assertTrue(
-        re.search(r'tensor<\?x3x224x224xf32>.*->.*tensor<\?x5x14x14xf32>',
+        re.search(r'tensor<\?x1x800xf32>.*->.*tensor<\?x512x159xf32>',
                   shlo_text) is not None)
     if has_tf_package():
       with tempfile.TemporaryDirectory() as tempdir:

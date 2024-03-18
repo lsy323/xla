@@ -73,8 +73,6 @@ XlaOpVector DynamicView::Lower(LoweringContext* loctx) const {
     concat_ops.push_back(xla::ConstantR1(
       loctx->builder(), absl::Span<const int32_t>(static_input_dims_vec)));
   }
-  xla::XlaOp static_input_dims = xla::ConstantR1(
-      loctx->builder(), absl::Span<const int32_t>(static_input_dims_vec));
   xla::XlaOp final_broadcast_dimensions = xla::ConcatInDim(
       loctx->builder(), absl::Span<xla::XlaOp>(concat_ops), 0);
 
@@ -84,8 +82,8 @@ XlaOpVector DynamicView::Lower(LoweringContext* loctx) const {
   xla::XlaOp result =
       xla::CustomCall(input.builder(), "mhlo.dynamic_reshape",
                       {input, final_broadcast_dimensions}, final_shape);
-  std::cout << ToString() << std::endl;
-  std::cout << "check final shape" << final_shape << std::endl;
+  // std::cout << ToString() << std::endl;
+  // std::cout << "check final shape" << final_shape << std::endl;
   return ReturnOp(result, loctx);
 }
 
