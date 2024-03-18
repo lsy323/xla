@@ -97,7 +97,6 @@ def remove_no_op_slice(gm: GraphModule):
   graph = gm.graph
   for n in graph.nodes:
     if n.op == "call_function" and n.target == aten.slice.Tensor:
-      import pdb;pdb.set_trace()
       if _is_no_op_slice(n):
         slice_src_node = n.args[0]
         n.replace_all_uses_with(slice_src_node)
