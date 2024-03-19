@@ -284,7 +284,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r'tensor<\?x5xf32>.*->.*tensor<\?x5xf32>',
                   shlo_text) is not None)
@@ -312,7 +311,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x5xf32>.*->.*tensor<\?x5xi32>",
                   shlo_text) is not None)
@@ -331,7 +329,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x197x768xf32>.*->.*tensor<\?x197x1xf32>",
                   shlo_text) is not None)
@@ -395,7 +392,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x5xf32>.*->.*tensor<\?x5xi32>",
                   shlo_text) is not None)
@@ -420,7 +416,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x197x768xf32>.*->.*tensor<\?x197x1xf32>",
                   shlo_text) is not None)
@@ -457,7 +452,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x512x159xf32>.*->.*tensor<\?x512x159xf32>",
                   shlo_text) is not None)
@@ -484,7 +478,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x197x768xf32>.*->.*tensor<\?x197x768xf32>",
                   shlo_text) is not None)
@@ -592,7 +585,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(
             r"%arg.: tensor<1x8x128x\?xf32>.*->.*tensor<1x8x128x\?xf32>",
@@ -612,7 +604,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(
             r"%arg.: tensor<\?xi64>.*%arg.: tensor<2x10xf32>.*->.*tensor<2x\?xf32>",
@@ -660,7 +651,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x5xf32>.*->.*tensor<\?x5xi32>",
                   shlo_text) is not None)
@@ -692,7 +682,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(
             r"%arg.: tensor<\?x10xf32>.*->.*tensor<\?x1x10xf32>",
@@ -742,7 +731,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     out1 = ep.module()(*args)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(
             r"%arg.: tensor<\?x3x224x224xf32>.*->.*tensor<\?x5x43681xf32>",
@@ -773,7 +761,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     out1 = ep.module()(*args)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(
             r"%arg.: tensor<\?x3x224x224xf32>.*->.*tensor<\?x5x43681xf32>",
@@ -828,7 +815,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     out1 = ep.module()(*args)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<\?x197x768xf32>.*->.*tensor<\?x768xf32>",
                   shlo_text) is not None)
@@ -860,7 +846,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     out1 = ep.module()(*args)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(r"%arg.: tensor<1x1x768xf32>.*->.*tensor<\?x1x768xf32>",
                   shlo_text) is not None)
@@ -887,7 +872,6 @@ class UnboundedDynamismExportTest(unittest.TestCase):
     out1 = ep.module()(*args)
     shlo_module = exported_program_to_stablehlo(ep)
     shlo_text = shlo_module.get_stablehlo_text()
-    print(shlo_text)
     self.assertTrue(
         re.search(
             r"%arg.: tensor<1x1x1x\?x256xf32>.*->.*tensor<1x1x8x\?x256xf32>",

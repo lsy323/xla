@@ -300,7 +300,6 @@ def _exported_program_to_stablehlo_bundle(exported_model,
   exported_model = exported_model.run_decompositions(_extra_decompositions)
   if exported_program_has_symbolic_input_shape(exported_model):
     process_exported_program_with_symbolic_input(exported_model)
-  print("after passes: ", exported_model)
   args, kwargs = exported_model.example_inputs
 
   assert len(kwargs) == 0, "Export to stablehlo doesnt support kwargs yet."
