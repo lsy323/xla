@@ -221,7 +221,7 @@ class ExportFxPassTest(unittest.TestCase):
     # print(before_decomp_ep_out - after_decomp_ep_out)
     self.assertTrue(torch.allclose(before_decomp_ep_out, after_decomp_ep_out, atol=1e-6))
 
-  def test_unsqueeze_to_view(self):
+  def test_dynamic_unsqueeze_to_view(self):
     class M(torch.nn.Module):
 
       def forward(self, x):
@@ -232,7 +232,7 @@ class ExportFxPassTest(unittest.TestCase):
     m = M().eval()
     ep = export(m, args, dynamic_shapes=dynamic_shapes)
     out1 = ep.module()(*args)
-    unsqueeze_to_view(ep.graph_module)
+    dynamic_unsqueeze_to_view(ep.graph_module)
     ep.graph_module.recompile()
     self.assertFalse('aten.unsqueeze' in ep.graph_module.code)
     self.assertTrue('aten.view' in ep.graph_module.code)

@@ -466,7 +466,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         save_torch_module_as_tf_saved_model(
             m, args, tempdir, dynamic_shapes=dynamic_shapes)
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
-        compare_exported_program_and_saved_model_result(ep, tempdir, args)
+        compare_exported_program_and_saved_model_result(ep, tempdir, args, atol=1e-6)
 
   def test_native_layer_norm(self):
     class M(torch.nn.Module):
@@ -493,7 +493,7 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         save_torch_module_as_tf_saved_model(
             m, args, tempdir, dynamic_shapes=dynamic_shapes)
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
-        compare_exported_program_and_saved_model_result(ep, tempdir, args)
+        compare_exported_program_and_saved_model_result(ep, tempdir, args, atol=1e-6)
 
   def test_permute(self):
     args = (torch.rand((10, 197, 12, 64)),)
