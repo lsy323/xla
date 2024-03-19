@@ -90,13 +90,29 @@ std::vector<int64_t> GetCompleteShape(absl::Span<const int64_t> output_sizes,
   return complete_output_sizes;
 }
 
-static xla::XlaOp BuildDynamicView(xla::XlaOp input,
-                                   const xla::Shape& input_shape,
-                                   const absl::Span<const int64_t>& output_sizes) {
-  // Need to do strict check on input and shapes.
-  // Assume only BS is dynamic now.
-  int src_index = 0;
-  int target_index = 0;
+xla::XlaOp BuildView(xla::XlaOp input, absl::Span<const int64_t> output_sizes) {
+  const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
+  const auto complete_output_sizes =
+      GetCompleteShape(output_sizes, input_shape.dimensions());
+    std::cout << "check complete_output_sizes: " << complete_output_sizes << std::endl;
+    return XlaHelpers::DynamicReshape(input, complete_output_sizes);
+}
+
+xla::XlaOp BuildUnboundedDynamicView(xla::XlaOp input, const xla::Shape& input_shape,
+                                     const absl::Span<const int64_t>& output_sizes) {
+  // Only Support BS is dynamic now.
+  const absl::Span<const int64_t> input_dims = input_shape.dimensions();
+  XLA_CHECK(std::count(input_dims.cbegin(), input_dims.cend(),
+    xla::Shape::kUnboundedSize) == 1 &&
+    input_shape.is_unbounded_dynamic_dimension(0)) << "Only BS of the input to view op can be unbounded dynamic.";
+  
+  XLA_CHECK(std::accumulate(input_dims.cbegin() + 1, input_dims.cend(), 1,
+                         std::multiplies<int64_t>()) ==   
+  std::accumulate(output_sizes.cbegin() + 1, output_sizes.cend(), 1,
+                         std::multiplies<int64_t>())) << "Dimensions of view input and output don't match.";
+
+  const int src_index = 0;
+  const int target_index = 0;
   xla::XlaOp dynamic_dim =
       xla::Reshape(xla::GetDimensionSize(input, src_index), {1});
   
@@ -121,19 +137,6 @@ static xla::XlaOp BuildDynamicView(xla::XlaOp input,
       xla::CustomCall(input.builder(), "mhlo.dynamic_reshape",
                       {input, final_broadcast_dimensions}, final_shape);
   return result;
-}
-
-xla::XlaOp BuildView(xla::XlaOp input, absl::Span<const int64_t> output_sizes) {
-  const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
-  if (!input_shape.is_unbounded_dynamic()) {
-    const auto complete_output_sizes =
-        GetCompleteShape(output_sizes, input_shape.dimensions());
-    std::cout << "check complete_output_sizes: " << complete_output_sizes << std::endl;
-    return XlaHelpers::DynamicReshape(input, complete_output_sizes);
-  } else {
-    // View with dynamic dim enters here only when it's generated during LTC tracing.
-    return BuildDynamicView(input, input_shape, output_sizes);
-  }
 }
 
 xla::XlaOp SetDimensionSizes(xla::XlaOp input,
