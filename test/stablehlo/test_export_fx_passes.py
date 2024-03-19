@@ -11,7 +11,7 @@ import torch_xla.core.xla_model as xm
 from torch.export import Dim, export
 from torch_xla.experimental.unbounded_dynamism_export import *
 from torch_xla.stablehlo import exported_program_to_stablehlo
-from .utils import wrap_func_as_nn_module
+from torch_xla.utils.stablehlo_test_utils import wrap_func_as_nn_module
 
 
 class ExportFxPassTest(unittest.TestCase):
@@ -46,7 +46,7 @@ class ExportFxPassTest(unittest.TestCase):
     ep = export(m, args, dynamic_shapes=dynamic_shapes)
     out1 = ep.module()(*args)
     self.assertTrue('aten.slice' in ep.graph_module.code)
-    ep.graph_module.graph = remove_no_op_slice(ep.graph_module)
+    remove_no_op_slice(ep.graph_module)
     ep.graph_module.recompile()
     self.assertTrue('aten.slice' not in ep.graph_module.code)
     out2 = ep.module()(*args)

@@ -7,7 +7,6 @@ import unittest
 import numpy as np
 import torch
 import torch_xla.core.xla_model as xm
-# import utils
 from torch.export import Dim, export
 from torch_xla.stablehlo import exported_program_to_stablehlo
 
@@ -16,7 +15,7 @@ try:
       save_torch_module_as_tf_saved_model
 except ImportError:
   print("tf is not installed. The tf.saved_model tests will be skipped.")
-from .utils import (compare_exported_program_and_saved_model_result,
+from torch_xla.utils.stablehlo_test_utils import (compare_exported_program_and_saved_model_result,
                    has_tf_package, load_save_model_and_inference,
                    wrap_func_as_nn_module)
 
