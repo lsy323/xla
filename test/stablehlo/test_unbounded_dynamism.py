@@ -16,7 +16,7 @@ try:
       save_torch_module_as_tf_saved_model
 except ImportError:
   print("tf is not installed. The tf.saved_model tests will be skipped.")
-from utils import (compare_exported_program_and_saved_model_result,
+from .utils import (compare_exported_program_and_saved_model_result,
                    has_tf_package, load_save_model_and_inference,
                    wrap_func_as_nn_module)
 
@@ -226,6 +226,23 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
+  def test_cumsum(self):
+    args = (torch.rand((10,5)), 1)
+    dynamic_shapes = ([{0: Dim("dim")}, None],)
+    m = wrap_func_as_nn_module(torch.ops.aten.cumsum.default)
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    self.assertTrue(
+        re.search(r'tensor<\?x5xf32>.*->.*tensor<\?x5xf32>',
+                  shlo_text) is not None)
+    if has_tf_package():
+      with tempfile.TemporaryDirectory() as tempdir:
+        save_torch_module_as_tf_saved_model(
+            m, args, tempdir, dynamic_shapes=dynamic_shapes)
+        self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+        compare_exported_program_and_saved_model_result(ep, tempdir, args)
+
   def test_div(self):
     args = (torch.rand((10, 12, 197)), 8.0)
     dynamic_shapes = ([{0: Dim("dim")}, None],)
@@ -261,6 +278,27 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
+  def test_embedding(self):
+    class M(torch.nn.Module):
+
+      def forward(self, x, y):
+        res = torch.ops.aten.embedding.default(x, y)
+        return res[0], res[1]
+
+    args = (
+        torch.rand((1, 768)), torch.randint(0, 15, (3, 10)).to(torch.int64)
+    )
+    dynamic_shapes = (None, {0: Dim("dim")})
+    # dynamic_shapes = None
+    m = M()
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    print(shlo_text)
+    self.assertTrue(
+        re.search(r"%arg.: tensor<\?x5xf32>.*->.*tensor<\?x5xi32>",
+                  shlo_text) is not None)
+
   def test_mean(self):
     class M(torch.nn.Module):
 
@@ -285,6 +323,33 @@ class UnboundedDynamismExportTest(unittest.TestCase):
             m, args, tempdir, dynamic_shapes=dynamic_shapes)
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
+
+  @unittest.skip("Implicit broadcasting logic is broken.")
+  def test_ne_scalar(self):
+    class M(torch.nn.Module):
+
+      def forward(self, x):
+        return torch.ops.aten.ne.Scalar(x, 1).to(torch.int32)
+
+    args = (
+        torch.rand((3, 5)).to(torch.int64),
+    )
+    dynamic_shapes = ({0: Dim("dim")},)
+    # dynamic_shapes = None
+    m = M()
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    print(shlo_text)
+    self.assertTrue(
+        re.search(r"%arg.: tensor<\?x5xf32>.*->.*tensor<\?x5xi32>",
+                  shlo_text) is not None)
+    # if has_tf_package():
+    #   with tempfile.TemporaryDirectory() as tempdir:
+    #     save_torch_module_as_tf_saved_model(
+    #         m, args, tempdir, dynamic_shapes=dynamic_shapes)
+    #     self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
+    #     compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
   def test_var(self):
     class M(torch.nn.Module):
@@ -545,6 +610,28 @@ class UnboundedDynamismExportTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tempdir, 'saved_model.pb')))
         compare_exported_program_and_saved_model_result(ep, tempdir, args)
 
+  # @unittest.skip("Implicit broadcasting logic is broken.")
+  def test_split_with_sizes(self):
+    class M(torch.nn.Module):
+
+      def forward(self, x):
+        res = torch.ops.aten.split_with_sizes.default(x, [1, 1], -1)
+        return res[0], res[1]
+
+    args = (
+        torch.rand((3, 10, 2)),
+    )
+    dynamic_shapes = ({0: Dim("dim")},)
+    # dynamic_shapes = None
+    m = M()
+    ep = export(m, args=args, dynamic_shapes=dynamic_shapes)
+    shlo_module = exported_program_to_stablehlo(ep)
+    shlo_text = shlo_module.get_stablehlo_text()
+    print(shlo_text)
+    self.assertTrue(
+        re.search(r"%arg.: tensor<\?x5xf32>.*->.*tensor<\?x5xi32>",
+                  shlo_text) is not None)
+  
   def test_transpose_on_dynamic_dim(self):
     args = (torch.rand((1, 8, 3, 256)),)
     dynamic_shapes = ([{2: Dim("dim")}],)
