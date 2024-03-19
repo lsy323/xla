@@ -43,7 +43,6 @@ ViewOp::ViewOp(const torch::lazy::Value& input, xla::Shape output_shape)
 
 XlaOpVector ViewOp::Lower(LoweringContext* loctx) const {
   xla::XlaOp input = loctx->GetOutputOp(operand(0));
-  // std::cout << "check output_sizes: " << absl::StrJoin(output_size_, ", ")  << std::endl;
   xla::XlaOp output;
   const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
   if (!input_shape.is_unbounded_dynamic()) {

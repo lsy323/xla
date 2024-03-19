@@ -84,8 +84,6 @@ SoftMaxPartials LogSoftmaxPartials(xla::XlaOp logits, int64_t dim) {
   bool is_unbounded_dynamic = logits_shape.is_unbounded_dynamic();
   if (is_unbounded_dynamic) {
     xla::Shape logits_max_shape = ShapeHelper::ShapeOfXlaOp(logits_max);
-    std::cout << "check logits_max_shape" << logits_max_shape << std::endl;
-    std::cout << "check logits_shape" << logits_shape << std::endl;
     logits_max = BuildBroadcastForReducedLogits(logits_max, logits, dim);
   }
   xla::XlaOp shifted_logits =

@@ -17,14 +17,12 @@ xla::Shape NodeOutputShape(const torch::lazy::Value& input,
                            int target_index) {
   std::vector<int64_t> expanded_size(size);
   xla::Shape input_shape = GetXlaShape(input);
-  std::cout << "check src size: " << input_shape << std::endl;
   for (size_t i = 0; i < expanded_size.size(); ++i) {
     if (expanded_size[i] == -1) {
       expanded_size[i] = input_shape.dimensions(i);
     }
   }
   expanded_size[target_index] = GetXlaShape(src_tensor).dimensions(src_index);
-  std::cout << "check expended size: " << expanded_size << std::endl;
   return xla::ShapeUtil::MakeShape(GetXlaShape(input).element_type(),
                                    {expanded_size});
 }

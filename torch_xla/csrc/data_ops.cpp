@@ -94,7 +94,6 @@ xla::XlaOp BuildView(xla::XlaOp input, absl::Span<const int64_t> output_sizes) {
   const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
   const auto complete_output_sizes =
       GetCompleteShape(output_sizes, input_shape.dimensions());
-    std::cout << "check complete_output_sizes: " << complete_output_sizes << std::endl;
     return XlaHelpers::DynamicReshape(input, complete_output_sizes);
 }
 
@@ -290,7 +289,6 @@ xla::XlaOp BuildStack(absl::Span<const xla::XlaOp> inputs, int64_t dim) {
       xla::Shape new_shape = xla::ShapeUtil::MakeShape(input_shape.element_type(),
                                 output_sizes,
                                 output_dynamic);
-      std::cout << "check output sizes " << new_shape << std::endl;
       reshaped_inputs.push_back(
           xla::CustomCall(
             input.builder(), "mhlo.dynamic_reshape", {input, concat_op},
