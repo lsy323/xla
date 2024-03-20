@@ -27,11 +27,11 @@ class ViTForImageClassificationModelWrapper(nn.Module):
 model = ViTForImageClassificationModelWrapper('google/vit-base-patch16-224').eval()
 args = (torch.rand(10, 3, 224, 224),)
 dynamic_shapes = ({0: Dim("dim")},)
-ep = export(model, args=args, dynamic_shapes=dynamic_shapes)
-print(ep)
-shlo_module = exported_program_to_stablehlo(ep)
-shlo_text = shlo_module.get_stablehlo_text()
-print(shlo_text)
+# ep = export(model, args=args, dynamic_shapes=dynamic_shapes)
+# print(ep)
+# shlo_module = exported_program_to_stablehlo(ep)
+# shlo_text = shlo_module.get_stablehlo_text()
+# print(shlo_text)
 
 # Export to saved_model
 tmp_dir = "/tmp/vit-export/vit-1"
