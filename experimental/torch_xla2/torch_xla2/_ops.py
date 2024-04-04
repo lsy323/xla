@@ -1702,3 +1702,7 @@ def _aten_scalar_tensor(s,
     dtype = tensor.t2j_dtype(dtype)
     return jnp.array(s, dtype=dtype)
   return jnp.array(s)
+
+@op(torch.ops.aten._weight_int4pack_mm)
+def _aten_weight_int4pack_mm(x, w, q_group_size, q_scale_and_zeros):
+  return x

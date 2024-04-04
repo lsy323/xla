@@ -4,7 +4,8 @@ import torch
 from torch_xla2 import ops_registry
 from torch_xla2 import tensor
 
-from . import test_base
+# from . import test_base
+import test_base
 from torch.utils import _pytree as pytree
 
 
@@ -4214,7 +4215,21 @@ class TestCoreAtenOps(unittest.TestCase):
     )
     kwargs = dict()
     run_export_and_compare(self, torch.ops.aten.where.self, args, kwargs)
-
+  
+  def test_aten_weight_int4pack_mm(self):
+    args = (
+        torch.randn((2, 5)),
+        torch.randn((5, 6, 128)),
+        128,
+        torch.randn((5, 6, 7, 8)),
+    )
+    kwargs = dict()
+    args2, kwargs2 = pytree.tree_map_only(torch.Tensor, tensor.move_to_device,
+                                            (args, kwargs))
+    res2 = torch.ops.aten._weight_int4pack_mm(*args2, **kwargs2)
+    print(args[0])
+    print(res2)
+    
 
 if __name__ == "__main__":
   test_base.main()
