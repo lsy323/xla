@@ -411,7 +411,7 @@ class Environment(contextlib.ContextDecorator):
     device = kwargs.get("device")
     jax_device = self.get_as_jax_device(device)
     # TODO(qihqi) figure out better ways for device propagation
-    if not self._manually_entered and jax_device is None:
+    if jax_device is None:
       # let torch handle it
       with mode_utils.no_dispatch(), torch._C.DisableTorchFunction():
         return func(*args, **kwargs)
