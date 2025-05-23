@@ -154,7 +154,7 @@ class Tensor(torch.Tensor):
 
   @property
   def data(self):
-    logger.warn("In-place to .data modifications still results a copy on TPU")
+    # logger.warn("In-place to .data modifications still results a copy on TPU")
     return self
 
   @data.setter
